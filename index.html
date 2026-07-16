@@ -1,0 +1,919 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#0f766e">
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='16' fill='%230f766e'/%3E%3Ccircle cx='32' cy='32' r='18' fill='none' stroke='white' stroke-width='5'/%3E%3Cpath d='M14 32h36M32 14c7 8 7 28 0 36M32 14c-7 8-7 28 0 36' fill='none' stroke='white' stroke-width='3'/%3E%3C/svg%3E">
+  <title>球馆空场看板</title>
+  <style>
+    :root {
+      --ink: #173433;
+      --muted: #637978;
+      --paper: rgba(255, 255, 255, 0.88);
+      --line: rgba(20, 74, 70, 0.14);
+      --teal: #0f766e;
+      --teal-dark: #0a5b55;
+      --mint: #d9f5ea;
+      --green: #16865f;
+      --green-bg: #e6f7ef;
+      --red: #b6463c;
+      --red-bg: #fff0ed;
+      --amber: #a36008;
+      --amber-bg: #fff7df;
+      --gray-bg: #eef2f1;
+      --shadow: 0 18px 55px rgba(28, 70, 66, 0.12);
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      color: var(--ink);
+      background:
+        radial-gradient(circle at 12% 8%, rgba(79, 209, 167, .22), transparent 28rem),
+        radial-gradient(circle at 88% 18%, rgba(253, 186, 116, .20), transparent 25rem),
+        linear-gradient(145deg, #f1fbf7 0%, #f8faf5 45%, #fff8ed 100%);
+      font-family: "Microsoft YaHei UI", "PingFang SC", "Noto Sans CJK SC", system-ui, sans-serif;
+    }
+
+    button, input { font: inherit; }
+
+    .app {
+      width: min(1180px, calc(100% - 32px));
+      margin: 0 auto;
+      padding: 34px 0 48px;
+    }
+
+    header {
+      display: flex;
+      align-items: flex-end;
+      justify-content: space-between;
+      gap: 24px;
+      margin-bottom: 22px;
+    }
+
+    .eyebrow {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 9px;
+      color: var(--teal);
+      font-size: 13px;
+      font-weight: 800;
+      letter-spacing: .16em;
+      text-transform: uppercase;
+    }
+
+    .live-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: #22a66f;
+      box-shadow: 0 0 0 5px rgba(34, 166, 111, .12);
+    }
+
+    h1 {
+      margin: 0;
+      font-size: clamp(30px, 5vw, 52px);
+      line-height: 1.08;
+      letter-spacing: -.045em;
+    }
+
+    .subtitle {
+      margin: 10px 0 0;
+      color: var(--muted);
+      font-size: 15px;
+    }
+
+    .controls {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      flex-wrap: wrap;
+      justify-content: flex-end;
+    }
+
+    .date-wrap {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      min-height: 46px;
+      padding: 0 13px;
+      border: 1px solid var(--line);
+      border-radius: 13px;
+      background: rgba(255,255,255,.8);
+      box-shadow: 0 8px 26px rgba(20, 70, 66, .06);
+    }
+
+    .date-wrap span { color: var(--muted); font-size: 13px; font-weight: 700; }
+    input[type="date"] { border: 0; outline: 0; color: var(--ink); background: transparent; font-weight: 800; }
+
+    .button {
+      min-height: 46px;
+      padding: 0 17px;
+      border: 0;
+      border-radius: 13px;
+      color: white;
+      background: var(--teal);
+      box-shadow: 0 9px 24px rgba(15, 118, 110, .22);
+      cursor: pointer;
+      font-weight: 800;
+      transition: transform .18s ease, background .18s ease, opacity .18s ease;
+    }
+
+    .button:hover { transform: translateY(-1px); background: var(--teal-dark); }
+    .button:disabled { cursor: wait; opacity: .62; transform: none; }
+
+    .button.secondary {
+      color: var(--teal);
+      border: 1px solid rgba(15, 118, 110, .22);
+      background: rgba(255,255,255,.86);
+      box-shadow: 0 8px 24px rgba(20, 70, 66, .08);
+    }
+
+    .button.secondary:hover { color: var(--teal-dark); background: var(--mint); }
+
+    .hero {
+      position: relative;
+      overflow: hidden;
+      display: grid;
+      grid-template-columns: minmax(240px, .8fr) minmax(320px, 1.7fr);
+      gap: 28px;
+      min-height: 245px;
+      padding: 30px;
+      border: 1px solid rgba(255,255,255,.82);
+      border-radius: 26px;
+      background: linear-gradient(122deg, rgba(10, 91, 85, .98), rgba(15, 118, 110, .92));
+      box-shadow: var(--shadow);
+      color: white;
+    }
+
+    .hero::after {
+      content: "";
+      position: absolute;
+      width: 350px;
+      height: 350px;
+      right: -110px;
+      top: -180px;
+      border-radius: 50%;
+      border: 58px solid rgba(255,255,255,.06);
+    }
+
+    .count-label { color: rgba(255,255,255,.72); font-size: 14px; font-weight: 700; }
+    .count-line { display: flex; align-items: baseline; gap: 10px; margin-top: 7px; }
+    .count { font-size: clamp(68px, 11vw, 112px); line-height: .95; font-weight: 900; letter-spacing: -.07em; }
+    .unit { color: rgba(255,255,255,.86); font-size: 22px; font-weight: 800; }
+    .ratio { margin-top: 13px; color: rgba(255,255,255,.72); font-size: 14px; }
+
+    .availability {
+      z-index: 1;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+    }
+
+    .availability h2 { margin: 0 0 14px; font-size: 16px; color: rgba(255,255,255,.75); }
+    .court-pills { display: flex; flex-wrap: wrap; gap: 10px; min-height: 48px; }
+    .court-pill {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-width: 69px;
+      height: 42px;
+      padding: 0 14px;
+      border: 1px solid rgba(255,255,255,.24);
+      border-radius: 999px;
+      background: rgba(255,255,255,.14);
+      backdrop-filter: blur(8px);
+      font-weight: 900;
+    }
+
+    .empty-message { color: rgba(255,255,255,.82); font-size: 22px; font-weight: 800; }
+
+    .meta-row {
+      z-index: 1;
+      display: flex;
+      align-items: center;
+      gap: 10px 22px;
+      flex-wrap: wrap;
+      margin-top: 22px;
+      color: rgba(255,255,255,.68);
+      font-size: 12px;
+    }
+
+    .meta-row span { display: inline-flex; align-items: center; gap: 7px; }
+
+    .section-head {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 16px;
+      margin: 28px 2px 14px;
+    }
+
+    .section-head h2 { margin: 0; font-size: 20px; letter-spacing: -.02em; }
+    .legend { display: flex; align-items: center; flex-wrap: wrap; gap: 13px; color: var(--muted); font-size: 12px; }
+    .legend span { display: inline-flex; align-items: center; gap: 6px; }
+    .legend i { width: 9px; height: 9px; border-radius: 50%; }
+
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(5, minmax(0, 1fr));
+      gap: 13px;
+    }
+
+    .court-card {
+      min-height: 158px;
+      padding: 17px;
+      border: 1px solid var(--line);
+      border-radius: 18px;
+      background: var(--paper);
+      box-shadow: 0 10px 32px rgba(30, 72, 69, .07);
+      backdrop-filter: blur(10px);
+    }
+
+    .court-card.available { border-color: rgba(22, 134, 95, .25); background: linear-gradient(145deg, rgba(255,255,255,.94), var(--green-bg)); }
+    .court-card.partial { border-color: rgba(163, 96, 8, .24); background: linear-gradient(145deg, rgba(255,255,255,.94), var(--amber-bg)); }
+    .court-card.sold { border-color: rgba(182, 70, 60, .18); background: linear-gradient(145deg, rgba(255,255,255,.94), var(--red-bg)); }
+    .court-card.missing { background: linear-gradient(145deg, rgba(255,255,255,.94), var(--gray-bg)); }
+
+    .card-top { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+    .court-name { font-size: 22px; font-weight: 900; letter-spacing: -.03em; }
+    .status-badge { padding: 5px 9px; border-radius: 999px; font-size: 11px; font-weight: 900; }
+    .available .status-badge { color: var(--green); background: rgba(22, 134, 95, .11); }
+    .partial .status-badge { color: var(--amber); background: rgba(163, 96, 8, .10); }
+    .sold .status-badge { color: var(--red); background: rgba(182, 70, 60, .09); }
+    .missing .status-badge { color: var(--muted); background: rgba(99, 121, 120, .10); }
+
+    .slots { display: grid; gap: 8px; margin-top: 17px; }
+    .slot { display: flex; align-items: center; justify-content: space-between; gap: 8px; color: var(--muted); font-size: 12px; }
+    .slot strong { font-size: 12px; }
+    .slot.free strong { color: var(--green); }
+    .slot.busy strong { color: var(--red); }
+    .slot.unknown strong { color: var(--muted); }
+
+    .notice {
+      display: none;
+      margin-top: 16px;
+      padding: 15px 17px;
+      border: 1px solid rgba(182, 70, 60, .2);
+      border-radius: 15px;
+      color: #8d352d;
+      background: rgba(255, 240, 237, .9);
+      line-height: 1.65;
+      font-size: 13px;
+    }
+
+    .notice.show { display: block; }
+
+    body.drawer-open { overflow: hidden; }
+
+    .drawer-overlay {
+      position: fixed;
+      inset: 0;
+      z-index: 1000;
+      visibility: hidden;
+      opacity: 0;
+      background: rgba(7, 38, 35, .52);
+      backdrop-filter: blur(4px);
+      transition: opacity .22s ease, visibility .22s ease;
+    }
+
+    .drawer-overlay.open { visibility: visible; opacity: 1; }
+
+    .all-day-drawer {
+      position: absolute;
+      top: 12px;
+      right: 12px;
+      bottom: 12px;
+      display: flex;
+      flex-direction: column;
+      width: min(1180px, calc(100% - 24px));
+      padding: 24px;
+      border: 1px solid rgba(255,255,255,.9);
+      border-radius: 26px;
+      background: #fbfffd;
+      box-shadow: -24px 0 70px rgba(7, 31, 29, .28);
+      transform: translateX(calc(100% + 24px));
+      transition: transform .28s cubic-bezier(.2,.8,.2,1);
+    }
+
+    .drawer-overlay.open .all-day-drawer { transform: translateX(0); }
+
+    .drawer-header {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 20px;
+      margin-bottom: 14px;
+    }
+
+    .drawer-title-row { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+    .drawer-header h2 { margin: 0; font-size: 28px; letter-spacing: -.035em; }
+    .drawer-date { margin: 6px 0 0; color: var(--muted); font-size: 13px; }
+
+    .drawer-close {
+      flex: 0 0 auto;
+      width: 42px;
+      height: 42px;
+      border: 0;
+      border-radius: 50%;
+      color: var(--ink);
+      background: #edf4f2;
+      cursor: pointer;
+      font-size: 23px;
+      line-height: 1;
+    }
+
+    .drawer-close:hover { background: #dfece8; }
+
+    .drawer-info {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px 20px;
+      flex-wrap: wrap;
+      margin-bottom: 12px;
+    }
+
+    .drawer-summary { color: var(--muted); font-size: 13px; font-weight: 700; }
+    .drawer-legend { display: flex; flex-wrap: wrap; gap: 12px; color: var(--muted); font-size: 12px; }
+    .drawer-legend span { display: inline-flex; align-items: center; gap: 6px; }
+    .drawer-legend i { width: 10px; height: 10px; border-radius: 3px; }
+
+    .all-day-scroll {
+      flex: 1;
+      min-height: 0;
+      overflow: auto;
+      border: 1px solid var(--line);
+      border-radius: 17px;
+      background: white;
+      overscroll-behavior: contain;
+    }
+
+    .all-day-grid {
+      --court-count: 15;
+      display: grid;
+      grid-template-columns: 96px repeat(var(--court-count), minmax(62px, 1fr));
+      min-width: calc(96px + var(--court-count) * 62px);
+    }
+
+    .all-day-cell {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 43px;
+      padding: 5px;
+      border-right: 1px solid #e5efec;
+      border-bottom: 1px solid #e5efec;
+      text-align: center;
+      font-size: 11px;
+      font-weight: 800;
+    }
+
+    .all-day-header {
+      position: sticky;
+      top: 0;
+      z-index: 4;
+      color: var(--ink);
+      background: #eef6f3;
+      font-size: 12px;
+    }
+
+    .all-day-time {
+      position: sticky;
+      left: 0;
+      z-index: 3;
+      flex-direction: column;
+      gap: 1px;
+      color: var(--ink);
+      background: #f8fbfa;
+      font-size: 12px;
+    }
+
+    .all-day-time small { color: var(--muted); font-size: 9px; font-weight: 700; }
+    .all-day-corner { left: 0; z-index: 6; }
+    .slot-available { color: var(--green); background: #e5f7ee; }
+    .slot-booked { color: var(--red); background: #fee9e5; }
+    .slot-sold { color: #9e443b; background: #fff3f0; }
+    .slot-missing { color: var(--muted); background: #f0f4f3; }
+
+    .target-row {
+      box-shadow: inset 0 2px 0 #e0a128, inset 0 -2px 0 #e0a128;
+    }
+
+    .all-day-time.target-row { color: #81530a; background: #fff5d9; }
+
+    .drawer-loading {
+      grid-column: 1 / -1;
+      display: grid;
+      place-items: center;
+      min-height: 260px;
+      color: var(--muted);
+      font-weight: 700;
+    }
+
+    .loading .count, .loading .court-pills, .loading .grid { opacity: .45; }
+
+    .skeleton {
+      display: block;
+      width: 100%;
+      height: 42px;
+      border-radius: 999px;
+      background: linear-gradient(90deg, rgba(255,255,255,.08), rgba(255,255,255,.2), rgba(255,255,255,.08));
+      background-size: 240% 100%;
+      animation: shimmer 1.4s infinite;
+    }
+
+    @keyframes shimmer { to { background-position: -240% 0; } }
+
+    @media (max-width: 900px) {
+      header { align-items: flex-start; flex-direction: column; }
+      .controls { width: 100%; justify-content: flex-start; }
+      .hero { grid-template-columns: 1fr; }
+      .grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+    }
+
+    @media (max-width: 600px) {
+      .app { width: min(100% - 20px, 1180px); padding-top: 22px; }
+      .controls, .date-wrap { width: 100%; }
+      .date-wrap { justify-content: space-between; }
+      .button { flex: 1; }
+      .hero { padding: 24px 20px; border-radius: 21px; }
+      .grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+      .court-card { padding: 14px; min-height: 150px; }
+      .section-head { align-items: flex-start; flex-direction: column; }
+      .court-name { font-size: 19px; }
+      .all-day-drawer { inset: 0; width: 100%; padding: 17px 11px; border-radius: 0; }
+      .drawer-header { margin-bottom: 11px; }
+      .drawer-header h2 { font-size: 23px; }
+      .drawer-info { align-items: flex-start; flex-direction: column; margin-bottom: 9px; }
+      .all-day-grid { grid-template-columns: 82px repeat(var(--court-count), minmax(58px, 1fr)); min-width: calc(82px + var(--court-count) * 58px); }
+      .all-day-cell { min-height: 41px; font-size: 10px; }
+      .all-day-time { font-size: 11px; }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      *, *::before, *::after { scroll-behavior: auto !important; animation-duration: .01ms !important; }
+    }
+  </style>
+</head>
+<body>
+  <main class="app" id="app">
+    <header>
+      <div>
+        <div class="eyebrow"><span class="live-dot"></span>实时订场</div>
+        <h1>球馆空场看板</h1>
+        <p class="subtitle">只看完整连续时段：19:30–21:30</p>
+      </div>
+      <div class="controls">
+        <label class="date-wrap">
+          <span>查询日期</span>
+          <input id="dateInput" type="date" aria-label="查询日期">
+        </label>
+        <button class="button" id="todayButton" type="button">回到今天</button>
+        <button class="button secondary" id="allDayButton" type="button">全天场况</button>
+        <button class="button" id="refreshButton" type="button">立即刷新</button>
+      </div>
+    </header>
+
+    <section class="hero" aria-live="polite">
+      <div>
+        <div class="count-label" id="dateLabel">正在查询</div>
+        <div class="count-line">
+          <span class="count" id="availableCount">—</span>
+          <span class="unit">个空场</span>
+        </div>
+        <div class="ratio" id="ratioText">共 15 个场地</div>
+      </div>
+      <div class="availability">
+        <h2>19:30–21:30 可连续预订</h2>
+        <div class="court-pills" id="availableCourts"><span class="skeleton"></span></div>
+        <div class="meta-row">
+          <span id="updateTime">正在连接球馆接口…</span>
+          <span id="countdownText">每 60 秒自动刷新</span>
+        </div>
+      </div>
+    </section>
+
+    <div class="notice" id="notice" role="alert"></div>
+
+    <div class="section-head">
+      <h2>全部场地明细</h2>
+      <div class="legend" aria-label="状态图例">
+        <span><i style="background:#16865f"></i>整段可订</span>
+        <span><i style="background:#a36008"></i>仅部分时段</span>
+        <span><i style="background:#b6463c"></i>整段不可订</span>
+      </div>
+    </div>
+    <section class="grid" id="courtGrid" aria-label="场地状态列表"></section>
+  </main>
+
+  <div class="drawer-overlay" id="allDayOverlay" aria-hidden="true">
+    <aside class="all-day-drawer" id="allDayDrawer" role="dialog" aria-modal="true" aria-labelledby="allDayTitle">
+      <div class="drawer-header">
+        <div>
+          <div class="drawer-title-row">
+            <h2 id="allDayTitle">全天场况</h2>
+          </div>
+          <p class="drawer-date" id="allDayDateLabel">正在准备全天数据…</p>
+        </div>
+        <button class="drawer-close" id="allDayClose" type="button" aria-label="关闭全天场况">×</button>
+      </div>
+      <div class="drawer-info">
+        <div class="drawer-summary" id="allDaySummary">每行是时间段，每列是场地</div>
+        <div class="drawer-legend" aria-label="全天场况图例">
+          <span><i style="background:#e5f7ee"></i>可订</span>
+          <span><i style="background:#fee9e5"></i>已预订</span>
+          <span><i style="background:#fff3f0"></i>售罄</span>
+          <span><i style="background:#fff5d9;box-shadow:inset 0 0 0 1px #e0a128"></i>重点时段</span>
+        </div>
+      </div>
+      <div class="all-day-scroll" id="allDayScroll" tabindex="0" aria-label="全天订场情况表格">
+        <div class="all-day-grid" id="allDayGrid">
+          <div class="drawer-loading">正在加载全天场况…</div>
+        </div>
+      </div>
+    </aside>
+  </div>
+
+  <script>
+    (() => {
+      'use strict';
+
+      const API_BASE = 'https://apply.duofriend.com/applet/appointment/get-venue-project';
+      const CLASSIFY_ID = '409344908805888';
+      const MAIN_ID = '409344904611366';
+      const TARGET_SLOTS = [
+        ['19:30', '20:30'],
+        ['20:30', '21:30']
+      ];
+      const EXPECTED_COURTS = ['VIP1', 'VIP2', 'VIP3', 'VIP4', 'VIP5', 'A6', 'A7', 'A8', 'A9', 'A10', 'A11', 'A12', 'A13', 'A14', 'A15'];
+      const AUTO_REFRESH_SECONDS = 60;
+
+      const app = document.getElementById('app');
+      const dateInput = document.getElementById('dateInput');
+      const todayButton = document.getElementById('todayButton');
+      const allDayButton = document.getElementById('allDayButton');
+      const refreshButton = document.getElementById('refreshButton');
+      const availableCount = document.getElementById('availableCount');
+      const availableCourts = document.getElementById('availableCourts');
+      const courtGrid = document.getElementById('courtGrid');
+      const ratioText = document.getElementById('ratioText');
+      const dateLabel = document.getElementById('dateLabel');
+      const updateTime = document.getElementById('updateTime');
+      const countdownText = document.getElementById('countdownText');
+      const notice = document.getElementById('notice');
+      const allDayOverlay = document.getElementById('allDayOverlay');
+      const allDayClose = document.getElementById('allDayClose');
+      const allDayDateLabel = document.getElementById('allDayDateLabel');
+      const allDaySummary = document.getElementById('allDaySummary');
+      const allDayGrid = document.getElementById('allDayGrid');
+      const allDayScroll = document.getElementById('allDayScroll');
+
+      let refreshTimer = null;
+      let countdownTimer = null;
+      let nextRefreshAt = 0;
+      let requestController = null;
+      let latestProjects = [];
+      let latestSelectedDate = '';
+      let latestUpdatedAt = null;
+      let drawerReturnFocus = null;
+
+      function getTodayInShanghai() {
+        const parts = new Intl.DateTimeFormat('en-CA', {
+          timeZone: 'Asia/Shanghai',
+          year: 'numeric', month: '2-digit', day: '2-digit'
+        }).formatToParts(new Date());
+        const values = Object.fromEntries(parts.map(part => [part.type, part.value]));
+        return `${values.year}-${values.month}-${values.day}`;
+      }
+
+      function formatDateLabel(dateString) {
+        const [year, month, day] = dateString.split('-').map(Number);
+        const date = new Date(Date.UTC(year, month - 1, day, 12));
+        const weekday = new Intl.DateTimeFormat('zh-CN', { weekday: 'long', timeZone: 'Asia/Shanghai' }).format(date);
+        const todaySuffix = dateString === getTodayInShanghai() ? ' · 今天' : '';
+        return `${year}年${month}月${day}日 · ${weekday}${todaySuffix}`;
+      }
+
+      function formatUpdateTime(date) {
+        return new Intl.DateTimeFormat('zh-CN', {
+          timeZone: 'Asia/Shanghai',
+          hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false
+        }).format(date);
+      }
+
+      function escapeHtml(value) {
+        return String(value)
+          .replaceAll('&', '&amp;')
+          .replaceAll('<', '&lt;')
+          .replaceAll('>', '&gt;')
+          .replaceAll('"', '&quot;')
+          .replaceAll("'", '&#039;');
+      }
+
+      function buildApiUrl(dateString) {
+        const params = new URLSearchParams({
+          classifyId: CLASSIFY_ID,
+          mainId: MAIN_ID,
+          selectDate: dateString,
+          _: String(Date.now())
+        });
+        return `${API_BASE}?${params}`;
+      }
+
+      function findSlot(project, beginTime, endTime) {
+        return (project?.timeList || []).find(slot =>
+          slot.beginTime === beginTime && slot.endTime === endTime
+        ) || null;
+      }
+
+      function hasValue(value) {
+        return value !== null && value !== undefined && String(value).trim() !== '';
+      }
+
+      function hasBookingMarker(slot) {
+        return Boolean(slot) && (hasValue(slot.orderId) || hasValue(slot.status));
+      }
+
+      function isSlotAvailable(slot) {
+        // 接口偶尔会在已生成订单后仍返回 isSure=1，因此还必须排除订单标记。
+        return Boolean(slot) && Number(slot.isSure) === 1 && !hasBookingMarker(slot);
+      }
+
+      function getSlotState(slot) {
+        if (!slot) return { key: 'missing', label: '无数据' };
+        if (isSlotAvailable(slot)) return { key: 'available', label: '可订' };
+        if (hasBookingMarker(slot)) return { key: 'booked', label: '已订' };
+        return { key: 'sold', label: '售罄' };
+      }
+
+      function timeToMinutes(time) {
+        const [hours, minutes] = String(time).split(':').map(Number);
+        return hours * 60 + minutes;
+      }
+
+      function getAllTimeRanges(projects) {
+        const rangeMap = new Map();
+        projects.forEach(project => {
+          (project?.timeList || []).forEach(slot => {
+            if (!slot?.beginTime || !slot?.endTime) return;
+            rangeMap.set(`${slot.beginTime}|${slot.endTime}`, {
+              beginTime: slot.beginTime,
+              endTime: slot.endTime
+            });
+          });
+        });
+        return [...rangeMap.values()].sort((a, b) => timeToMinutes(a.beginTime) - timeToMinutes(b.beginTime));
+      }
+
+      function isTargetRange(beginTime, endTime) {
+        return TARGET_SLOTS.some(([begin, end]) => begin === beginTime && end === endTime);
+      }
+
+      function isDrawerOpen() {
+        return allDayOverlay.classList.contains('open');
+      }
+
+      function renderAllDayMessage(message) {
+        allDayGrid.innerHTML = `<div class="drawer-loading">${escapeHtml(message)}</div>`;
+      }
+
+      function renderAllDay(projects, selectedDate) {
+        allDayDateLabel.textContent = formatDateLabel(selectedDate);
+        if (!projects.length) {
+          allDaySummary.textContent = '每行是时间段，每列是场地';
+          renderAllDayMessage('正在加载全天场况…');
+          return;
+        }
+
+        const projectMap = new Map(projects.map(project => [String(project.projectName).trim(), project]));
+        const timeRanges = getAllTimeRanges(projects);
+        let availableSlots = 0;
+        let knownSlots = 0;
+        let html = '<div class="all-day-cell all-day-header all-day-time all-day-corner">时间</div>';
+
+        html += EXPECTED_COURTS
+          .map(name => `<div class="all-day-cell all-day-header">${escapeHtml(name)}</div>`)
+          .join('');
+
+        timeRanges.forEach(({ beginTime, endTime }) => {
+          const targetClass = isTargetRange(beginTime, endTime) ? ' target-row' : '';
+          html += `
+            <div class="all-day-cell all-day-time${targetClass}" data-time="${escapeHtml(beginTime)}">
+              <strong>${escapeHtml(beginTime)}</strong>
+              <small>${escapeHtml(endTime)}</small>
+            </div>`;
+
+          EXPECTED_COURTS.forEach(courtName => {
+            const slot = findSlot(projectMap.get(courtName), beginTime, endTime);
+            const state = getSlotState(slot);
+            if (slot) knownSlots += 1;
+            if (state.key === 'available') availableSlots += 1;
+            const price = slot && Number.isFinite(Number(slot.amountMoney)) ? ` · ¥${Number(slot.amountMoney).toFixed(0)}` : '';
+            const detail = `${courtName} ${beginTime}–${endTime}：${state.label}${price}`;
+            html += `<div class="all-day-cell slot-${state.key}${targetClass}" title="${escapeHtml(detail)}">${state.label}</div>`;
+          });
+        });
+
+        allDayGrid.style.setProperty('--court-count', String(EXPECTED_COURTS.length));
+        allDayGrid.innerHTML = html;
+        const updatedText = latestUpdatedAt ? ` · 北京时间 ${formatUpdateTime(latestUpdatedAt)} 更新` : '';
+        allDaySummary.textContent = `全天 ${availableSlots}/${knownSlots} 个场次可订${updatedText}`;
+      }
+
+      function openAllDay() {
+        drawerReturnFocus = document.activeElement;
+        allDayOverlay.classList.add('open');
+        allDayOverlay.setAttribute('aria-hidden', 'false');
+        document.body.classList.add('drawer-open');
+        renderAllDay(latestProjects, dateInput.value || getTodayInShanghai());
+        allDayScroll.scrollTop = 0;
+        allDayScroll.scrollLeft = 0;
+        setTimeout(() => allDayClose.focus(), 0);
+      }
+
+      function closeAllDay() {
+        allDayOverlay.classList.remove('open');
+        allDayOverlay.setAttribute('aria-hidden', 'true');
+        document.body.classList.remove('drawer-open');
+        if (drawerReturnFocus && typeof drawerReturnFocus.focus === 'function') drawerReturnFocus.focus();
+      }
+
+      function analyzeCourt(project, courtName) {
+        if (!project) {
+          return { name: courtName, state: 'missing', label: '暂无数据', slots: [null, null], fullyAvailable: false };
+        }
+
+        const slots = TARGET_SLOTS.map(([begin, end]) => findSlot(project, begin, end));
+        if (slots.some(slot => !slot)) {
+          return { name: courtName, state: 'missing', label: '时段缺失', slots, fullyAvailable: false };
+        }
+
+        const freeCount = slots.filter(isSlotAvailable).length;
+        if (freeCount === 2) {
+          return { name: courtName, state: 'available', label: '整段可订', slots, fullyAvailable: true };
+        }
+        if (freeCount === 1) {
+          return { name: courtName, state: 'partial', label: '部分可订', slots, fullyAvailable: false };
+        }
+        return { name: courtName, state: 'sold', label: '整段不可订', slots, fullyAvailable: false };
+      }
+
+      function renderSlot(slot, begin, end) {
+        const known = Boolean(slot);
+        const isFree = isSlotAvailable(slot);
+        const className = !known ? 'unknown' : (isFree ? 'free' : 'busy');
+        const text = !known ? '无数据' : (isFree ? '可订' : (hasBookingMarker(slot) ? '已预订' : '售罄'));
+        return `
+          <div class="slot ${className}">
+            <span>${begin}–${end}</span>
+            <strong>${text}</strong>
+          </div>`;
+      }
+
+      function render(courts, selectedDate) {
+        const freeCourts = courts.filter(court => court.fullyAvailable);
+        availableCount.textContent = String(freeCourts.length);
+        ratioText.textContent = `共 ${courts.length} 个场地 · ${courts.length - freeCourts.length} 个不可连续预订`;
+        dateLabel.textContent = formatDateLabel(selectedDate);
+
+        if (freeCourts.length) {
+          availableCourts.innerHTML = freeCourts
+            .map(court => `<span class="court-pill">${escapeHtml(court.name)}</span>`)
+            .join('');
+        } else {
+          availableCourts.innerHTML = '<div class="empty-message">这一时段暂时没有空场</div>';
+        }
+
+        courtGrid.innerHTML = courts.map(court => `
+          <article class="court-card ${court.state}">
+            <div class="card-top">
+              <span class="court-name">${escapeHtml(court.name)}</span>
+              <span class="status-badge">${court.label}</span>
+            </div>
+            <div class="slots">
+              ${renderSlot(court.slots[0], TARGET_SLOTS[0][0], TARGET_SLOTS[0][1])}
+              ${renderSlot(court.slots[1], TARGET_SLOTS[1][0], TARGET_SLOTS[1][1])}
+            </div>
+          </article>
+        `).join('');
+      }
+
+      function setLoading(isLoading) {
+        app.classList.toggle('loading', isLoading);
+        refreshButton.disabled = isLoading;
+        refreshButton.textContent = isLoading ? '查询中…' : '立即刷新';
+      }
+
+      function showError(message) {
+        notice.textContent = message;
+        notice.classList.add('show');
+      }
+
+      function hideError() {
+        notice.classList.remove('show');
+        notice.textContent = '';
+      }
+
+      function scheduleRefresh() {
+        clearTimeout(refreshTimer);
+        clearInterval(countdownTimer);
+        nextRefreshAt = Date.now() + AUTO_REFRESH_SECONDS * 1000;
+
+        refreshTimer = setTimeout(() => loadAvailability(false), AUTO_REFRESH_SECONDS * 1000);
+        updateCountdown();
+        countdownTimer = setInterval(updateCountdown, 1000);
+      }
+
+      function updateCountdown() {
+        const seconds = Math.max(0, Math.ceil((nextRefreshAt - Date.now()) / 1000));
+        countdownText.textContent = `${seconds} 秒后自动刷新`;
+      }
+
+      async function loadAvailability(showLoading = true) {
+        const selectedDate = dateInput.value || getTodayInShanghai();
+        const dateChanged = selectedDate !== latestSelectedDate;
+        latestSelectedDate = selectedDate;
+        if (dateChanged) {
+          latestProjects = [];
+          latestUpdatedAt = null;
+          if (isDrawerOpen()) renderAllDay([], selectedDate);
+        }
+        dateInput.value = selectedDate;
+        dateLabel.textContent = formatDateLabel(selectedDate);
+        hideError();
+
+        if (requestController) requestController.abort();
+        requestController = new AbortController();
+
+        if (showLoading) setLoading(true);
+
+        try {
+          const response = await fetch(buildApiUrl(selectedDate), {
+            method: 'GET',
+            mode: 'cors',
+            credentials: 'omit',
+            cache: 'no-store',
+            signal: requestController.signal,
+            headers: { 'Accept': 'application/json' }
+          });
+
+          if (!response.ok) throw new Error(`接口返回 HTTP ${response.status}`);
+          const payload = await response.json();
+          if (Number(payload.code) !== 0) throw new Error(payload.message || '接口返回异常');
+
+          const dayData = Array.isArray(payload.data) ? payload.data[0] : null;
+          const projects = Array.isArray(dayData?.projectList) ? dayData.projectList : [];
+          if (!projects.length) throw new Error('没有找到该日期的场地数据');
+
+          const projectMap = new Map(projects.map(project => [String(project.projectName).trim(), project]));
+          const courts = EXPECTED_COURTS.map(name => analyzeCourt(projectMap.get(name), name));
+          latestProjects = projects;
+          latestUpdatedAt = new Date();
+          render(courts, selectedDate);
+          if (isDrawerOpen()) renderAllDay(projects, selectedDate);
+          updateTime.textContent = `北京时间 ${formatUpdateTime(latestUpdatedAt)} 更新`;
+        } catch (error) {
+          if (error.name === 'AbortError') return;
+          showError(`查询失败：${error.message}。请检查网络后点击“立即刷新”；若浏览器拦截本地文件访问网络，可换用 Chrome 或 Edge 打开本文件。`);
+          updateTime.textContent = '本次更新失败';
+          if (isDrawerOpen() && !latestProjects.length) {
+            allDaySummary.textContent = '全天场况加载失败';
+            renderAllDayMessage('加载失败，请检查网络后重试');
+          }
+        } finally {
+          setLoading(false);
+          scheduleRefresh();
+        }
+      }
+
+      dateInput.value = getTodayInShanghai();
+      dateInput.addEventListener('change', () => loadAvailability(true));
+      refreshButton.addEventListener('click', () => loadAvailability(true));
+      allDayButton.addEventListener('click', openAllDay);
+      allDayClose.addEventListener('click', closeAllDay);
+      allDayOverlay.addEventListener('click', event => {
+        if (event.target === allDayOverlay) closeAllDay();
+      });
+      todayButton.addEventListener('click', () => {
+        dateInput.value = getTodayInShanghai();
+        loadAvailability(true);
+      });
+
+      document.addEventListener('visibilitychange', () => {
+        if (!document.hidden && Date.now() >= nextRefreshAt) loadAvailability(false);
+      });
+
+      document.addEventListener('keydown', event => {
+        if (event.key === 'Escape' && isDrawerOpen()) closeAllDay();
+      });
+
+      loadAvailability(true);
+    })();
+  </script>
+</body>
+</html>
