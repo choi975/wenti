@@ -1,7 +1,11 @@
 const UPSTREAM_URL = 'https://apply.duofriend.com/applet/appointment/get-venue-project';
 const CLASSIFY_ID = '409344908805888';
 const MAIN_ID = '409344904611366';
-const TARGET_SLOTS = [
+
+// 球馆营业时间 8:30-22:30：每小时 25 分抓取对应的下一个整点时段。
+const CAPTURE_START_HOUR = 8;
+const CAPTURE_END_HOUR = 21;
+const KEY_SLOTS = [
   ['19:30', '20:30'],
   ['20:30', '21:30']
 ];
@@ -9,8 +13,8 @@ const EXPECTED_COURTS = [
   'VIP1', 'VIP2', 'VIP3', 'VIP4', 'VIP5',
   'A6', 'A7', 'A8', 'A9', 'A10', 'A11', 'A12', 'A13', 'A14', 'A15'
 ];
-const PRIMARY_CRON = '25 11 * * *';
-const BACKUP_CRON = '27 11 * * *';
+const PRIMARY_CRON = '25 * * * *';
+const BACKUP_CRON = '27 * * * *';
 
 class UpstreamError extends Error {
   constructor(message, status = 502) {
@@ -31,15 +35,39 @@ function errorResponse(message, status = 500) {
   return json({ code: status, message }, { status });
 }
 
-function getTodayInShanghai() {
+function getShanghaiParts(now = new Date()) {
   const parts = new Intl.DateTimeFormat('en-CA', {
     timeZone: 'Asia/Shanghai',
     year: 'numeric',
     month: '2-digit',
-    day: '2-digit'
-  }).formatToParts(new Date());
-  const values = Object.fromEntries(parts.map(part => [part.type, part.value]));
+    day: '2-digit',
+    hour: '2-digit',
+    hourCycle: 'h23'
+  }).formatToParts(now);
+  return Object.fromEntries(parts.map(part => [part.type, part.value]));
+}
+
+function getTodayInShanghai() {
+  const values = getShanghaiParts();
   return `${values.year}-${values.month}-${values.day}`;
+}
+
+function getHourInShanghai() {
+  return Number(getShanghaiParts().hour);
+}
+
+function pad2(value) {
+  return String(value).padStart(2, '0');
+}
+
+function getWindowForHour(hour) {
+  if (!Number.isInteger(hour) || hour < CAPTURE_START_HOUR || hour > CAPTURE_END_HOUR) return null;
+  return { beginTime: `${pad2(hour)}:30`, endTime: `${pad2(hour + 1)}:30` };
+}
+
+function shiftDate(value, days) {
+  const [year, month, day] = value.split('-').map(Number);
+  return new Date(Date.UTC(year, month - 1, day + days, 12)).toISOString().slice(0, 10);
 }
 
 function normalizeDate(value) {
@@ -80,7 +108,7 @@ function findSlot(project, beginTime, endTime) {
 }
 
 function analyzeCourt(project, name) {
-  const slots = TARGET_SLOTS.map(([beginTime, endTime]) => findSlot(project, beginTime, endTime));
+  const slots = KEY_SLOTS.map(([beginTime, endTime]) => findSlot(project, beginTime, endTime));
   const freeCount = slots.filter(isSlotAvailable).length;
   const state = !project || slots.some(slot => !slot)
     ? 'missing'
@@ -110,7 +138,7 @@ function analyzeProjects(projects) {
     projects.map(project => [String(project?.projectName || '').trim(), project])
   );
   const courts = EXPECTED_COURTS.map(name => analyzeCourt(projectMap.get(name), name));
-  const slots = TARGET_SLOTS.map(([beginTime, endTime], index) => {
+  const slots = KEY_SLOTS.map(([beginTime, endTime], index) => {
     const availableCourts = courts
       .filter(court => isSlotAvailable(court.slots[index]))
       .map(court => court.name);
@@ -126,18 +154,32 @@ function analyzeProjects(projects) {
   };
 }
 
-function makeSnapshotDetails(courts) {
-  return courts.map(court => ({
-    name: court.name,
-    continuous: court.fullyAvailable,
-    slots: court.slots.map((slot, index) => ({
-      beginTime: TARGET_SLOTS[index][0],
-      endTime: TARGET_SLOTS[index][1],
+function analyzeWindow(projects, beginTime, endTime) {
+  const projectMap = new Map(
+    projects.map(project => [String(project?.projectName || '').trim(), project])
+  );
+  const courts = EXPECTED_COURTS.map(name => {
+    const slot = findSlot(projectMap.get(name), beginTime, endTime);
+    return {
+      name,
+      available: isSlotAvailable(slot),
       state: getSlotState(slot),
       isSure: slot?.isSure ?? null,
       hasBookingMarker: hasBookingMarker(slot)
+    };
+  });
+  const availableCourts = courts.filter(court => court.available).map(court => court.name);
+
+  return {
+    availableCount: availableCourts.length,
+    availableCourts,
+    details: courts.map(({ name, state, isSure, hasBookingMarker }) => ({
+      name,
+      state,
+      isSure,
+      hasBookingMarker
     }))
-  }));
+  };
 }
 
 async function fetchVenuePayload(date) {
@@ -215,59 +257,95 @@ function parseJson(value, fallback) {
 }
 
 function parseHistoryLimit(value) {
-  const limit = Number.parseInt(value || '14', 10);
-  if (!Number.isFinite(limit)) return 14;
+  const limit = Number.parseInt(value || '30', 10);
+  if (!Number.isFinite(limit)) return 30;
   return Math.min(Math.max(limit, 1), 90);
+}
+
+function deriveContinuous(windows) {
+  const first = windows.find(window => window.beginTime === KEY_SLOTS[0][0]);
+  const second = windows.find(window => window.beginTime === KEY_SLOTS[1][0]);
+  const firstOk = first?.status === 'success';
+  const secondOk = second?.status === 'success';
+
+  if (!firstOk || !secondOk) {
+    return {
+      beginTime: KEY_SLOTS[0][0],
+      endTime: KEY_SLOTS[1][1],
+      status: firstOk || secondOk ? 'partial' : 'failed',
+      availableCount: null,
+      availableCourts: [],
+      error: first?.error || second?.error || null
+    };
+  }
+
+  const courts = EXPECTED_COURTS.filter(name =>
+    first.availableCourts.includes(name) && second.availableCourts.includes(name)
+  );
+  return {
+    beginTime: KEY_SLOTS[0][0],
+    endTime: KEY_SLOTS[1][1],
+    status: 'success',
+    availableCount: courts.length,
+    availableCourts: courts,
+    error: null
+  };
+}
+
+function buildHistoryItems(rows) {
+  const byDate = new Map();
+  for (const row of rows) {
+    let item = byDate.get(row.snapshot_date);
+    if (!item) {
+      item = { date: row.snapshot_date, windows: [] };
+      byDate.set(row.snapshot_date, item);
+    }
+    item.windows.push({
+      beginTime: row.window_begin,
+      endTime: row.window_end,
+      capturedAt: row.captured_at,
+      sourceTimestamp: row.source_timestamp,
+      status: row.status,
+      availableCount: row.available_count,
+      availableCourts: parseJson(row.available_courts, []),
+      error: row.error_message || null
+    });
+  }
+
+  const items = [...byDate.values()].map(item => {
+    item.windows.sort((a, b) => a.beginTime.localeCompare(b.beginTime));
+    item.continuous = deriveContinuous(item.windows);
+    return item;
+  });
+  items.sort((a, b) => b.date.localeCompare(a.date));
+  return items;
 }
 
 async function handleHistory(env, url) {
   const limit = parseHistoryLimit(url.searchParams.get('days'));
+  const cutoff = shiftDate(getTodayInShanghai(), -(limit - 1));
   try {
     const result = await env.DB.prepare(`
       SELECT
         snapshot_date,
+        window_begin,
+        window_end,
         captured_at,
         source_timestamp,
         status,
-        continuous_count,
-        continuous_courts,
-        first_slot_count,
-        first_slot_courts,
-        second_slot_count,
-        second_slot_courts,
-        target_slots_json,
+        available_count,
+        available_courts,
+        details_json,
         error_message
       FROM venue_snapshots
-      ORDER BY snapshot_date DESC
-      LIMIT ?
-    `).bind(limit).all();
+      WHERE snapshot_date >= ?
+      ORDER BY snapshot_date DESC, window_begin ASC
+    `).bind(cutoff).all();
 
-    const items = (result.results || []).map(row => ({
-      date: row.snapshot_date,
-      capturedAt: row.captured_at,
-      sourceTimestamp: row.source_timestamp,
-      status: row.status,
-      continuousCount: row.continuous_count,
-      continuousCourts: parseJson(row.continuous_courts, []),
-      slots: [
-        {
-          beginTime: TARGET_SLOTS[0][0],
-          endTime: TARGET_SLOTS[0][1],
-          availableCount: row.first_slot_count,
-          availableCourts: parseJson(row.first_slot_courts, [])
-        },
-        {
-          beginTime: TARGET_SLOTS[1][0],
-          endTime: TARGET_SLOTS[1][1],
-          availableCount: row.second_slot_count,
-          availableCourts: parseJson(row.second_slot_courts, [])
-        }
-      ],
-      details: parseJson(row.target_slots_json, []),
-      error: row.error_message || null
-    }));
-
-    return json({ items, generatedAt: new Date().toISOString() });
+    return json({
+      items: buildHistoryItems(result.results || []),
+      generatedAt: new Date().toISOString()
+    });
   } catch (error) {
     console.error('Unable to read history', error);
     return errorResponse('Unable to read snapshot history.', 500);
@@ -278,45 +356,38 @@ async function writeSnapshot(env, snapshot) {
   await env.DB.prepare(`
     INSERT INTO venue_snapshots (
       snapshot_date,
+      window_begin,
+      window_end,
       captured_at,
       source_timestamp,
       status,
-      continuous_count,
-      continuous_courts,
-      first_slot_count,
-      first_slot_courts,
-      second_slot_count,
-      second_slot_courts,
-      target_slots_json,
+      available_count,
+      available_courts,
+      details_json,
       error_message,
       created_at,
       updated_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    ON CONFLICT(snapshot_date) DO UPDATE SET
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ON CONFLICT(snapshot_date, window_begin) DO UPDATE SET
+      window_end = excluded.window_end,
       captured_at = excluded.captured_at,
       source_timestamp = excluded.source_timestamp,
       status = excluded.status,
-      continuous_count = excluded.continuous_count,
-      continuous_courts = excluded.continuous_courts,
-      first_slot_count = excluded.first_slot_count,
-      first_slot_courts = excluded.first_slot_courts,
-      second_slot_count = excluded.second_slot_count,
-      second_slot_courts = excluded.second_slot_courts,
-      target_slots_json = excluded.target_slots_json,
+      available_count = excluded.available_count,
+      available_courts = excluded.available_courts,
+      details_json = excluded.details_json,
       error_message = excluded.error_message,
       updated_at = excluded.updated_at
     WHERE venue_snapshots.status <> 'success'
   `).bind(
     snapshot.date,
+    snapshot.window.beginTime,
+    snapshot.window.endTime,
     snapshot.capturedAt,
     snapshot.sourceTimestamp,
     snapshot.status,
-    snapshot.continuousCount,
-    snapshot.continuousCourts,
-    snapshot.firstSlotCount,
-    snapshot.firstSlotCourts,
-    snapshot.secondSlotCount,
-    snapshot.secondSlotCourts,
+    snapshot.availableCount,
+    snapshot.availableCourts,
     snapshot.details,
     snapshot.error,
     snapshot.capturedAt,
@@ -324,50 +395,45 @@ async function writeSnapshot(env, snapshot) {
   ).run();
 }
 
-async function captureSnapshot(env, isBackup) {
+async function captureSnapshot(env, window, isBackup) {
   const date = getTodayInShanghai();
   if (isBackup) {
     const existing = await env.DB.prepare(
-      'SELECT status FROM venue_snapshots WHERE snapshot_date = ?'
-    ).bind(date).first();
+      'SELECT status FROM venue_snapshots WHERE snapshot_date = ? AND window_begin = ?'
+    ).bind(date, window.beginTime).first();
     if (existing?.status === 'success') return;
   }
 
   const capturedAt = new Date().toISOString();
   try {
     const { payload, projects } = await fetchVenuePayload(date);
-    const dashboard = analyzeProjects(projects);
-    const firstSlot = dashboard.slots[0];
-    const secondSlot = dashboard.slots[1];
+    const analysis = analyzeWindow(projects, window.beginTime, window.endTime);
     await writeSnapshot(env, {
       date,
+      window,
       capturedAt,
       sourceTimestamp: Number(payload.timestamp) || null,
       status: 'success',
-      continuousCount: dashboard.continuousCount,
-      continuousCourts: JSON.stringify(dashboard.continuousCourts),
-      firstSlotCount: firstSlot.availableCount,
-      firstSlotCourts: JSON.stringify(firstSlot.availableCourts),
-      secondSlotCount: secondSlot.availableCount,
-      secondSlotCourts: JSON.stringify(secondSlot.availableCourts),
-      details: JSON.stringify(makeSnapshotDetails(dashboard.courts)),
+      availableCount: analysis.availableCount,
+      availableCourts: JSON.stringify(analysis.availableCourts),
+      details: JSON.stringify(analysis.details),
       error: null
     });
-    console.log(`Saved venue snapshot for ${date}.`);
+    console.log(`Saved venue snapshot for ${date} ${window.beginTime}-${window.endTime}.`);
   } catch (error) {
-    console.error(`Unable to save venue snapshot for ${date}.`, error);
+    console.error(
+      `Unable to save venue snapshot for ${date} ${window.beginTime}-${window.endTime}.`,
+      error
+    );
     try {
       await writeSnapshot(env, {
         date,
+        window,
         capturedAt,
         sourceTimestamp: null,
         status: 'failed',
-        continuousCount: null,
-        continuousCourts: null,
-        firstSlotCount: null,
-        firstSlotCourts: null,
-        secondSlotCount: null,
-        secondSlotCourts: null,
+        availableCount: null,
+        availableCourts: null,
         details: null,
         error: String(error?.message || 'Unknown snapshot error').slice(0, 500)
       });
@@ -393,8 +459,13 @@ export default {
   },
 
   async scheduled(controller, env, ctx) {
+    const isPrimary = controller.cron === PRIMARY_CRON;
     const isBackup = controller.cron === BACKUP_CRON;
-    if (controller.cron !== PRIMARY_CRON && !isBackup) return;
-    ctx.waitUntil(captureSnapshot(env, isBackup));
+    if (!isPrimary && !isBackup) return;
+
+    const window = getWindowForHour(getHourInShanghai());
+    if (!window) return;
+
+    await captureSnapshot(env, window, isBackup);
   }
 };
