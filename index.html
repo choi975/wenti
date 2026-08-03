@@ -333,6 +333,8 @@
       transition: transform .28s cubic-bezier(.2,.8,.2,1);
     }
 
+    .all-day-drawer [hidden] { display: none !important; }
+
     .drawer-overlay.open .all-day-drawer { transform: translateX(0); }
 
     .drawer-header {
@@ -448,6 +450,45 @@
       font-weight: 700;
     }
 
+    .history-list {
+      display: grid;
+      align-content: start;
+      min-width: 0;
+      background: white;
+    }
+
+    .history-empty {
+      display: grid;
+      place-items: center;
+      min-height: 260px;
+      padding: 24px;
+      color: var(--muted);
+      font-weight: 700;
+      text-align: center;
+    }
+
+    .history-row {
+      display: grid;
+      grid-template-columns: minmax(132px, .9fr) minmax(92px, .55fr) minmax(230px, 1.8fr) minmax(160px, .9fr);
+      gap: 14px;
+      align-items: center;
+      min-width: 0;
+      padding: 17px 18px;
+      border-bottom: 1px solid #e5efec;
+      background: white;
+    }
+
+    .history-row:last-child { border-bottom: 0; }
+    .history-row.selected { box-shadow: inset 4px 0 0 var(--teal); background: #f2fbf7; }
+    .history-row.failed { background: #fff8f5; }
+    .history-date { font-weight: 900; line-height: 1.35; }
+    .history-date small, .history-meta { display: block; margin-top: 3px; color: var(--muted); font-size: 12px; font-weight: 700; }
+    .history-count { color: var(--teal); font-size: 14px; font-weight: 800; white-space: nowrap; }
+    .history-count strong { display: block; font-size: 26px; line-height: 1; }
+    .history-courts { min-width: 0; color: var(--ink); font-size: 13px; font-weight: 800; line-height: 1.55; overflow-wrap: anywhere; }
+    .history-slots { display: grid; gap: 3px; color: var(--muted); font-size: 12px; font-weight: 700; }
+    .history-failure { grid-column: 2 / -1; color: #9e443b; font-size: 13px; line-height: 1.55; overflow-wrap: anywhere; }
+
     .loading .count, .loading .court-pills, .loading .grid { opacity: .45; }
 
     .skeleton {
@@ -487,6 +528,8 @@
       .all-day-grid { grid-template-columns: 82px repeat(var(--court-count), minmax(58px, 1fr)); min-width: calc(82px + var(--court-count) * 58px); }
       .all-day-cell { min-height: 41px; font-size: 10px; }
       .all-day-time { font-size: 11px; }
+      .history-row { grid-template-columns: minmax(120px, 1fr) minmax(86px, .6fr); gap: 12px; padding: 15px; }
+      .history-courts, .history-slots, .history-failure { grid-column: 1 / -1; }
     }
 
     @media (prefers-reduced-motion: reduce) {
@@ -513,6 +556,7 @@
         </div>
         <button class="button" id="todayButton" type="button">回到今天</button>
         <button class="button secondary" id="allDayButton" type="button">全天场况</button>
+        <button class="button secondary" id="historyButton" type="button">19:25 快照</button>
         <button class="button" id="refreshButton" type="button">立即刷新</button>
       </div>
     </header>
@@ -562,7 +606,7 @@
       </div>
       <div class="drawer-info">
         <div class="drawer-summary" id="allDaySummary">每行是时间段，每列是场地</div>
-        <div class="drawer-legend" aria-label="全天场况图例">
+        <div class="drawer-legend" id="drawerLegend" aria-label="全天场况图例">
           <span><i style="background:#e5f7ee"></i>可订</span>
           <span><i style="background:#fee9e5"></i>已预订</span>
           <span><i style="background:#fff3f0"></i>售罄</span>
@@ -573,6 +617,7 @@
         <div class="all-day-grid" id="allDayGrid">
           <div class="drawer-loading">正在加载全天场况…</div>
         </div>
+        <div class="history-list" id="historyList" hidden></div>
       </div>
     </aside>
   </div>
@@ -590,6 +635,7 @@
       ];
       const EXPECTED_COURTS = ['VIP1', 'VIP2', 'VIP3', 'VIP4', 'VIP5', 'A6', 'A7', 'A8', 'A9', 'A10', 'A11', 'A12', 'A13', 'A14', 'A15'];
       const AUTO_REFRESH_SECONDS = 60;
+      const WORKER_ORIGIN = 'https://wenti-court-dashboard.choi975.workers.dev';
 
       const app = document.getElementById('app');
       const dateInput = document.getElementById('dateInput');
@@ -597,6 +643,7 @@
       const nextDayButton = document.getElementById('nextDayButton');
       const todayButton = document.getElementById('todayButton');
       const allDayButton = document.getElementById('allDayButton');
+      const historyButton = document.getElementById('historyButton');
       const refreshButton = document.getElementById('refreshButton');
       const availableCount = document.getElementById('availableCount');
       const availableCourts = document.getElementById('availableCourts');
@@ -608,19 +655,27 @@
       const notice = document.getElementById('notice');
       const allDayOverlay = document.getElementById('allDayOverlay');
       const allDayClose = document.getElementById('allDayClose');
+      const allDayTitle = document.getElementById('allDayTitle');
       const allDayDateLabel = document.getElementById('allDayDateLabel');
       const allDaySummary = document.getElementById('allDaySummary');
+      const drawerLegend = document.getElementById('drawerLegend');
       const allDayGrid = document.getElementById('allDayGrid');
+      const historyList = document.getElementById('historyList');
       const allDayScroll = document.getElementById('allDayScroll');
 
       let refreshTimer = null;
       let countdownTimer = null;
       let nextRefreshAt = 0;
       let requestController = null;
+      let historyRequestController = null;
       let latestProjects = [];
       let latestSelectedDate = '';
       let latestUpdatedAt = null;
+      let latestHistory = [];
       let drawerReturnFocus = null;
+      let drawerMode = 'all-day';
+      let availabilityRequestId = 0;
+      let historyRequestId = 0;
 
       function getTodayInShanghai() {
         const parts = new Intl.DateTimeFormat('en-CA', {
@@ -652,6 +707,11 @@
         }).format(date);
       }
 
+      function formatSnapshotTime(value) {
+        const date = new Date(value);
+        return Number.isNaN(date.getTime()) ? '时间未知' : `北京时间 ${formatUpdateTime(date)}`;
+      }
+
       function escapeHtml(value) {
         return String(value)
           .replaceAll('&', '&amp;')
@@ -668,7 +728,19 @@
           selectDate: dateString,
           _: String(Date.now())
         });
-        return `${API_BASE}?${params}`;
+        if (!usesWorkerApi()) return `${API_BASE}?${params}`;
+        return `/api/availability?date=${encodeURIComponent(dateString)}&_=${Date.now()}`;
+      }
+
+      function usesWorkerApi() {
+        return location.origin === WORKER_ORIGIN ||
+          location.hostname === '127.0.0.1' ||
+          location.hostname === 'localhost';
+      }
+
+      function buildHistoryUrl() {
+        const base = usesWorkerApi() ? '' : WORKER_ORIGIN;
+        return `${base}/api/history?days=30`;
       }
 
       function findSlot(project, beginTime, endTime) {
@@ -724,6 +796,15 @@
         return allDayOverlay.classList.contains('open');
       }
 
+      function setDrawerMode(mode) {
+        drawerMode = mode;
+        const isHistory = mode === 'history';
+        allDayTitle.textContent = isHistory ? '19:25 快照' : '全天场况';
+        drawerLegend.hidden = isHistory;
+        allDayGrid.hidden = isHistory;
+        historyList.hidden = !isHistory;
+      }
+
       function renderAllDayMessage(message) {
         allDayGrid.innerHTML = `<div class="drawer-loading">${escapeHtml(message)}</div>`;
       }
@@ -771,15 +852,105 @@
         allDaySummary.textContent = `全天 ${availableSlots}/${knownSlots} 个场次可订${updatedText}`;
       }
 
-      function openAllDay() {
-        drawerReturnFocus = document.activeElement;
+      function renderHistoryMessage(message) {
+        historyList.innerHTML = `<div class="history-empty">${escapeHtml(message)}</div>`;
+      }
+
+      function renderHistory(items, selectedDate) {
+        allDayDateLabel.textContent = `最近 ${items.length} 条每日定时记录`;
+        allDaySummary.textContent = '记录显示当日实际抓取结果，时间均为北京时间';
+
+        if (!items.length) {
+          renderHistoryMessage('还没有可查看的 19:25 快照');
+          return;
+        }
+
+        historyList.innerHTML = items.map(snapshot => {
+          const selectedClass = snapshot.date === selectedDate ? ' selected' : '';
+          const dateText = formatDateLabel(snapshot.date);
+          const timeText = formatSnapshotTime(snapshot.capturedAt);
+          if (snapshot.status !== 'success') {
+            const errorText = snapshot.error ? `：${snapshot.error}` : '';
+            return `
+              <article class="history-row failed${selectedClass}">
+                <div class="history-date">${escapeHtml(dateText)}<small>${escapeHtml(timeText)}</small></div>
+                <div class="history-count"><strong>—</strong>抓取失败</div>
+                <div class="history-failure">球馆接口未能返回可保存的数据${escapeHtml(errorText)}</div>
+              </article>`;
+          }
+
+          const firstSlot = snapshot.slots?.[0] || {};
+          const secondSlot = snapshot.slots?.[1] || {};
+          const courtText = snapshot.continuousCourts?.length
+            ? snapshot.continuousCourts.join('、')
+            : '无连续可订场地';
+          return `
+            <article class="history-row${selectedClass}">
+              <div class="history-date">${escapeHtml(dateText)}<small>${escapeHtml(timeText)}</small></div>
+              <div class="history-count"><strong>${escapeHtml(snapshot.continuousCount ?? 0)}</strong>个连续可订</div>
+              <div class="history-courts">${escapeHtml(courtText)}</div>
+              <div class="history-slots">
+                <span>${escapeHtml(firstSlot.beginTime || TARGET_SLOTS[0][0])}–${escapeHtml(firstSlot.endTime || TARGET_SLOTS[0][1])}：${escapeHtml(firstSlot.availableCount ?? 0)} 个可订</span>
+                <span>${escapeHtml(secondSlot.beginTime || TARGET_SLOTS[1][0])}–${escapeHtml(secondSlot.endTime || TARGET_SLOTS[1][1])}：${escapeHtml(secondSlot.availableCount ?? 0)} 个可订</span>
+              </div>
+            </article>`;
+        }).join('');
+      }
+
+      function showDrawer() {
         allDayOverlay.classList.add('open');
         allDayOverlay.setAttribute('aria-hidden', 'false');
         document.body.classList.add('drawer-open');
-        renderAllDay(latestProjects, dateInput.value || getTodayInShanghai());
         allDayScroll.scrollTop = 0;
         allDayScroll.scrollLeft = 0;
         setTimeout(() => allDayClose.focus(), 0);
+      }
+
+      function openAllDay() {
+        drawerReturnFocus = document.activeElement;
+        setDrawerMode('all-day');
+        renderAllDay(latestProjects, dateInput.value || getTodayInShanghai());
+        showDrawer();
+      }
+
+      async function loadHistory() {
+        const requestId = ++historyRequestId;
+        if (location.protocol === 'file:') {
+          renderHistoryMessage('历史快照需要打开已部署的 Cloudflare 版本');
+          return;
+        }
+
+        if (historyRequestController) historyRequestController.abort();
+        historyRequestController = new AbortController();
+        try {
+          const response = await fetch(buildHistoryUrl(), {
+            cache: 'no-store',
+            signal: historyRequestController.signal,
+            headers: { Accept: 'application/json' }
+          });
+          if (!response.ok) throw new Error(`服务返回 HTTP ${response.status}`);
+          const payload = await response.json();
+          if (!Array.isArray(payload.items)) throw new Error(payload.message || '历史数据格式异常');
+          if (requestId !== historyRequestId) return;
+          latestHistory = payload.items;
+          if (isDrawerOpen() && drawerMode === 'history') {
+            renderHistory(latestHistory, dateInput.value || getTodayInShanghai());
+          }
+        } catch (error) {
+          if (error.name === 'AbortError' || requestId !== historyRequestId) return;
+          allDaySummary.textContent = '历史快照加载失败';
+          renderHistoryMessage(`加载失败：${error.message}`);
+        }
+      }
+
+      function openHistory() {
+        drawerReturnFocus = document.activeElement;
+        setDrawerMode('history');
+        allDayDateLabel.textContent = '正在读取每日定时记录…';
+        allDaySummary.textContent = '每日 19:25 自动保存，失败时 19:27 补试一次';
+        renderHistoryMessage('正在加载 19:25 快照…');
+        showDrawer();
+        loadHistory();
       }
 
       function closeAllDay() {
@@ -887,13 +1058,17 @@
       }
 
       async function loadAvailability(showLoading = true) {
+        const requestId = ++availabilityRequestId;
         const selectedDate = dateInput.value || getTodayInShanghai();
         const dateChanged = selectedDate !== latestSelectedDate;
         latestSelectedDate = selectedDate;
         if (dateChanged) {
           latestProjects = [];
           latestUpdatedAt = null;
-          if (isDrawerOpen()) renderAllDay([], selectedDate);
+          if (isDrawerOpen() && drawerMode === 'all-day') renderAllDay([], selectedDate);
+          if (isDrawerOpen() && drawerMode === 'history' && latestHistory.length) {
+            renderHistory(latestHistory, selectedDate);
+          }
         }
         dateInput.value = selectedDate;
         dateLabel.textContent = formatDateLabel(selectedDate);
@@ -921,25 +1096,35 @@
           const dayData = Array.isArray(payload.data) ? payload.data[0] : null;
           const projects = Array.isArray(dayData?.projectList) ? dayData.projectList : [];
           if (!projects.length) throw new Error('没有找到该日期的场地数据');
+          if (requestId !== availabilityRequestId) return;
 
           const projectMap = new Map(projects.map(project => [String(project.projectName).trim(), project]));
-          const courts = EXPECTED_COURTS.map(name => analyzeCourt(projectMap.get(name), name));
+          const workerCourts = Array.isArray(payload.dashboard?.courts) ? payload.dashboard.courts : null;
+          const courts = workerCourts?.length === EXPECTED_COURTS.length
+            ? workerCourts
+            : EXPECTED_COURTS.map(name => analyzeCourt(projectMap.get(name), name));
           latestProjects = projects;
-          latestUpdatedAt = new Date();
+          const workerUpdatedAt = new Date(payload.dashboard?.generatedAt || Date.now());
+          latestUpdatedAt = Number.isNaN(workerUpdatedAt.getTime()) ? new Date() : workerUpdatedAt;
           render(courts, selectedDate);
-          if (isDrawerOpen()) renderAllDay(projects, selectedDate);
+          if (isDrawerOpen() && drawerMode === 'all-day') renderAllDay(projects, selectedDate);
           updateTime.textContent = `北京时间 ${formatUpdateTime(latestUpdatedAt)} 更新`;
         } catch (error) {
-          if (error.name === 'AbortError') return;
-          showError(`查询失败：${error.message}。请检查网络后点击“立即刷新”；若浏览器拦截本地文件访问网络，可换用 Chrome 或 Edge 打开本文件。`);
+          if (error.name === 'AbortError' || requestId !== availabilityRequestId) return;
+          const hint = !usesWorkerApi()
+            ? '请检查网络后点击“立即刷新”；若浏览器拦截本地文件访问网络，可换用 Chrome 或 Edge 打开本文件。'
+            : '服务端暂时无法读取球馆接口，请稍后点击“立即刷新”。';
+          showError(`查询失败：${error.message}。${hint}`);
           updateTime.textContent = '本次更新失败';
-          if (isDrawerOpen() && !latestProjects.length) {
+          if (isDrawerOpen() && drawerMode === 'all-day' && !latestProjects.length) {
             allDaySummary.textContent = '全天场况加载失败';
             renderAllDayMessage('加载失败，请检查网络后重试');
           }
         } finally {
-          setLoading(false);
-          scheduleRefresh();
+          if (requestId === availabilityRequestId) {
+            setLoading(false);
+            scheduleRefresh();
+          }
         }
       }
 
@@ -949,6 +1134,7 @@
       nextDayButton.addEventListener('click', () => changeDateBy(1));
       refreshButton.addEventListener('click', () => loadAvailability(true));
       allDayButton.addEventListener('click', openAllDay);
+      historyButton.addEventListener('click', openHistory);
       allDayClose.addEventListener('click', closeAllDay);
       allDayOverlay.addEventListener('click', event => {
         if (event.target === allDayOverlay) closeAllDay();

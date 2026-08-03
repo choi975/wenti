@@ -1,0 +1,18 @@
+name = "wenti-court-dashboard"
+main = "src/worker.js"
+compatibility_date = "2026-08-03"
+workers_dev = true
+
+[assets]
+directory = "./public"
+binding = "ASSETS"
+run_worker_first = ["/api/*"]
+
+[[d1_databases]]
+binding = "DB"
+database_name = "wenti-venue-history"
+database_id = "43436738-bf3d-4ba0-8a5f-3d3621ec88ec"
+migrations_dir = "migrations"
+
+[triggers]
+crons = ["25 11 * * *", "27 11 * * *"]

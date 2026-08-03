@@ -1,0 +1,9 @@
+{
+  "name": "wenti-court-dashboard",
+  "private": true,
+  "scripts": {
+    "build": "node scripts/build-static.mjs",
+    "dev": "npm run build && npx --yes wrangler dev --test-scheduled --local --port 8787",
+    "deploy": "npm run build && npx --yes wrangler deploy"
+  }
+}

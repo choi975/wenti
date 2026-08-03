@@ -1,5 +1,7 @@
 .playwright-cli/
 output/
+.wrangler/
+public/
 *.log
 .env
 .env.*
