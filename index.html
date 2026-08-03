@@ -939,7 +939,10 @@
         } catch (error) {
           if (error.name === 'AbortError' || requestId !== historyRequestId) return;
           allDaySummary.textContent = '历史快照加载失败';
-          renderHistoryMessage(`加载失败：${error.message}`);
+          const message = error.message === 'Failed to fetch'
+            ? '当前网络无法连接快照服务，请稍后重试'
+            : `加载失败：${error.message}`;
+          renderHistoryMessage(message);
         }
       }
 
@@ -1111,9 +1114,11 @@
           updateTime.textContent = `北京时间 ${formatUpdateTime(latestUpdatedAt)} 更新`;
         } catch (error) {
           if (error.name === 'AbortError' || requestId !== availabilityRequestId) return;
-          const hint = !usesWorkerApi()
-            ? '请检查网络后点击“立即刷新”；若浏览器拦截本地文件访问网络，可换用 Chrome 或 Edge 打开本文件。'
-            : '服务端暂时无法读取球馆接口，请稍后点击“立即刷新”。';
+          const hint = usesWorkerApi()
+            ? '服务端暂时无法读取球馆接口，请稍后点击“立即刷新”。'
+            : location.protocol === 'file:'
+              ? '请检查网络后点击“立即刷新”；若浏览器拦截本地文件访问网络，可换用 Chrome 或 Edge 打开本文件。'
+              : '页面暂时无法连接球馆接口，请稍后点击“立即刷新”。';
           showError(`查询失败：${error.message}。${hint}`);
           updateTime.textContent = '本次更新失败';
           if (isDrawerOpen() && drawerMode === 'all-day' && !latestProjects.length) {
