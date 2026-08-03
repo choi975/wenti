@@ -1,4 +1,4 @@
-name = "wenti-court-dashboard"
+name = "wenti"
 main = "src/worker.js"
 compatibility_date = "2026-08-03"
 workers_dev = true

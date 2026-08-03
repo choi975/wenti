@@ -1,5 +1,5 @@
 {
-  "name": "wenti-court-dashboard",
+  "name": "wenti",
   "private": true,
   "scripts": {
     "build": "node scripts/build-static.mjs",
