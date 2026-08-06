@@ -13,9 +13,9 @@ const EXPECTED_COURTS = [
   'VIP1', 'VIP2', 'VIP3', 'VIP4', 'VIP5',
   'A6', 'A7', 'A8', 'A9', 'A10', 'A11', 'A12', 'A13', 'A14', 'A15'
 ];
-const CRON = '* * * * *';
-// 每个时段最多重试 8 次：:25-:29 密集重试，之后 :35/:45/:55 再补几次。
-const RETRY_MINUTES = [25, 26, 27, 28, 29, 35, 45, 55];
+const CRON = '25-29 * * * *';
+// 每个时段最多重试 5 次：:25-:29，全部在 :30 锁场之前。
+const RETRY_MINUTES = [25, 26, 27, 28, 29];
 
 class UpstreamError extends Error {
   constructor(message, status = 502) {
