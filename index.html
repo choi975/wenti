@@ -467,56 +467,6 @@
       text-align: center;
     }
 
-    .history-row {
-      display: grid;
-      grid-template-columns: minmax(132px, .9fr) minmax(92px, .55fr) minmax(230px, 1.8fr) minmax(160px, .9fr);
-      gap: 14px;
-      align-items: center;
-      min-width: 0;
-      padding: 17px 18px;
-      border-bottom: 1px solid #e5efec;
-      background: white;
-    }
-
-    .history-row:last-child { border-bottom: 0; }
-    .history-row.selected { box-shadow: inset 4px 0 0 var(--teal); background: #f2fbf7; }
-    .history-row.failed { background: #fff8f5; }
-    .history-date { font-weight: 900; line-height: 1.35; }
-    .history-date small, .history-meta { display: block; margin-top: 3px; color: var(--muted); font-size: 12px; font-weight: 700; }
-    .history-count { color: var(--teal); font-size: 14px; font-weight: 800; white-space: nowrap; }
-    .history-count strong { display: block; font-size: 26px; line-height: 1; }
-    .history-courts { min-width: 0; color: var(--ink); font-size: 13px; font-weight: 800; line-height: 1.55; overflow-wrap: anywhere; }
-    .history-slots { display: grid; gap: 3px; color: var(--muted); font-size: 12px; font-weight: 700; }
-    .history-failure { grid-column: 2 / -1; color: #9e443b; font-size: 13px; line-height: 1.55; overflow-wrap: anywhere; }
-
-    .history-tabs {
-      display: flex;
-      gap: 8px;
-      margin-bottom: 12px;
-    }
-
-    .history-tab {
-      min-height: 38px;
-      padding: 0 15px;
-      border: 1px solid var(--line);
-      border-radius: 11px;
-      color: var(--muted);
-      background: rgba(255,255,255,.86);
-      cursor: pointer;
-      font-weight: 800;
-      font-size: 13px;
-      transition: color .18s ease, background .18s ease, border-color .18s ease;
-    }
-
-    .history-tab:hover { color: var(--teal-dark); background: var(--mint); }
-
-    .history-tab.active {
-      color: white;
-      border-color: var(--teal);
-      background: var(--teal);
-      box-shadow: 0 6px 16px rgba(15, 118, 110, .18);
-    }
-
     .hour-matrix {
       display: grid;
       grid-template-columns: 96px repeat(var(--day-count), minmax(72px, 1fr));
@@ -605,8 +555,6 @@
       .all-day-grid { grid-template-columns: 82px repeat(var(--court-count), minmax(58px, 1fr)); min-width: calc(82px + var(--court-count) * 58px); }
       .all-day-cell { min-height: 41px; font-size: 10px; }
       .all-day-time { font-size: 11px; }
-      .history-row { grid-template-columns: minmax(120px, 1fr) minmax(86px, .6fr); gap: 12px; padding: 15px; }
-      .history-courts, .history-slots, .history-failure { grid-column: 1 / -1; }
     }
 
     @media (prefers-reduced-motion: reduce) {
@@ -690,10 +638,6 @@
           <span><i style="background:#fff5d9;box-shadow:inset 0 0 0 1px #e0a128"></i>重点时段</span>
         </div>
       </div>
-      <div class="history-tabs" id="historyTabs" hidden aria-label="历史空场视图">
-        <button class="history-tab active" id="historyKeyTab" type="button" aria-pressed="true">重点时段 19:30–21:30</button>
-        <button class="history-tab" id="historyAllTab" type="button" aria-pressed="false">全部整点</button>
-      </div>
       <div class="all-day-scroll" id="allDayScroll" tabindex="0" aria-label="全天订场情况表格">
         <div class="all-day-grid" id="allDayGrid">
           <div class="drawer-loading">正在加载全天场况…</div>
@@ -749,9 +693,6 @@
       const drawerLegend = document.getElementById('drawerLegend');
       const allDayGrid = document.getElementById('allDayGrid');
       const historyList = document.getElementById('historyList');
-      const historyTabs = document.getElementById('historyTabs');
-      const historyKeyTab = document.getElementById('historyKeyTab');
-      const historyAllTab = document.getElementById('historyAllTab');
       const allDayScroll = document.getElementById('allDayScroll');
 
       let refreshTimer = null;
@@ -765,7 +706,6 @@
       let latestHistory = [];
       let drawerReturnFocus = null;
       let drawerMode = 'all-day';
-      let historyView = 'key';
       let availabilityRequestId = 0;
       let historyRequestId = 0;
 
@@ -797,11 +737,6 @@
           timeZone: 'Asia/Shanghai',
           hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false
         }).format(date);
-      }
-
-      function formatSnapshotTime(value) {
-        const date = new Date(value);
-        return Number.isNaN(date.getTime()) ? '时间未知' : `北京时间 ${formatUpdateTime(date)}`;
       }
 
       function escapeHtml(value) {
@@ -895,7 +830,6 @@
         drawerLegend.hidden = isHistory;
         allDayGrid.hidden = isHistory;
         historyList.hidden = !isHistory;
-        historyTabs.hidden = !isHistory;
       }
 
       function renderAllDayMessage(message) {
@@ -949,64 +883,6 @@
         historyList.innerHTML = `<div class="history-empty">${escapeHtml(message)}</div>`;
       }
 
-      function updateHistoryTabs() {
-        historyKeyTab.classList.toggle('active', historyView === 'key');
-        historyAllTab.classList.toggle('active', historyView === 'all');
-        historyKeyTab.setAttribute('aria-pressed', String(historyView === 'key'));
-        historyAllTab.setAttribute('aria-pressed', String(historyView === 'all'));
-      }
-
-      function renderHistoryKey(items, selectedDate) {
-        allDayDateLabel.textContent = `最近 ${items.length} 天 · 重点时段 19:30–21:30`;
-        allDaySummary.textContent = '每天 8:25–21:25 每小时自动快照，19:30–21:30 为重点时段';
-
-        historyList.innerHTML = items.map(item => {
-          const selectedClass = item.date === selectedDate ? ' selected' : '';
-          const dateText = formatDateLabel(item.date);
-          const continuous = item.continuous || {};
-          const first = item.windows.find(window => window.beginTime === '19:30');
-          const second = item.windows.find(window => window.beginTime === '20:30');
-          const successCount = item.windows.filter(window => window.status === 'success').length;
-          const totalCount = item.windows.length;
-          const captureTime = formatSnapshotTime(first?.capturedAt || second?.capturedAt);
-
-          let countHtml;
-          if (continuous.status === 'success') {
-            countHtml = `<strong>${escapeHtml(continuous.availableCount ?? 0)}</strong>个连续可订`;
-          } else if (continuous.status === 'partial') {
-            countHtml = `<strong>—</strong>数据不全`;
-          } else {
-            countHtml = `<strong>—</strong>抓取失败`;
-          }
-
-          const courtText = continuous.availableCourts?.length
-            ? continuous.availableCourts.join('、')
-            : '无连续可订场地';
-
-          const slotLine = window => {
-            if (!window) return '未抓取';
-            if (window.status !== 'success') return `${window.beginTime}–${window.endTime}：抓取失败`;
-            return `${window.beginTime}–${window.endTime}：${window.availableCount ?? 0} 个可订`;
-          };
-
-          const failureText = continuous.status !== 'success' && continuous.error
-            ? `<div class="history-failure">球馆接口未能返回可保存的数据：${escapeHtml(continuous.error)}</div>`
-            : '';
-
-          return `
-            <article class="history-row${continuous.status !== 'success' ? ' failed' : ''}${selectedClass}">
-              <div class="history-date">${escapeHtml(dateText)}<small>${escapeHtml(captureTime)} 抓取 · 成功 ${successCount}/${totalCount} 个时段</small></div>
-              <div class="history-count">${countHtml}</div>
-              <div class="history-courts">${escapeHtml(courtText)}</div>
-              <div class="history-slots">
-                <span>${escapeHtml(slotLine(first))}</span>
-                <span>${escapeHtml(slotLine(second))}</span>
-              </div>
-              ${failureText}
-            </article>`;
-        }).join('');
-      }
-
       function renderHistoryAll(items) {
         allDayDateLabel.textContent = `最近 ${items.length} 天 · 全部整点`;
         allDaySummary.textContent = '每列一天，每行一个整点时段，数字为该时段可订场地数';
@@ -1048,18 +924,14 @@
         historyList.innerHTML = `<div class="hour-matrix" style="--day-count: ${items.length}">${html}</div>`;
       }
 
-      function renderHistory(items, selectedDate) {
+      function renderHistory(items) {
         if (!items.length) {
           allDayDateLabel.textContent = '历史空场';
           allDaySummary.textContent = '每天 8:25–21:25 每小时自动快照，失败时整点后 2 分钟自动补试';
           renderHistoryMessage('还没有可查看的历史空场');
           return;
         }
-        if (historyView === 'all') {
-          renderHistoryAll(items);
-        } else {
-          renderHistoryKey(items, selectedDate);
-        }
+        renderHistoryAll(items);
       }
 
       function showDrawer() {
@@ -1099,7 +971,7 @@
           if (requestId !== historyRequestId) return;
           latestHistory = payload.items;
           if (isDrawerOpen() && drawerMode === 'history') {
-            renderHistory(latestHistory, dateInput.value || getTodayInShanghai());
+            renderHistory(latestHistory);
           }
         } catch (error) {
           if (error.name === 'AbortError' || requestId !== historyRequestId) return;
@@ -1114,8 +986,6 @@
       function openHistory() {
         drawerReturnFocus = document.activeElement;
         setDrawerMode('history');
-        historyView = 'key';
-        updateHistoryTabs();
         allDayDateLabel.textContent = '正在读取每日定时记录…';
         allDaySummary.textContent = '每天 8:25–21:25 每小时自动快照，失败时整点后 2 分钟自动补试';
         renderHistoryMessage('正在加载历史空场…');
@@ -1237,7 +1107,7 @@
           latestUpdatedAt = null;
           if (isDrawerOpen() && drawerMode === 'all-day') renderAllDay([], selectedDate);
           if (isDrawerOpen() && drawerMode === 'history' && latestHistory.length) {
-            renderHistory(latestHistory, selectedDate);
+            renderHistory(latestHistory);
           }
         }
         dateInput.value = selectedDate;
@@ -1307,20 +1177,6 @@
       refreshButton.addEventListener('click', () => loadAvailability(true));
       allDayButton.addEventListener('click', openAllDay);
       historyButton.addEventListener('click', openHistory);
-      historyKeyTab.addEventListener('click', () => {
-        historyView = 'key';
-        updateHistoryTabs();
-        if (latestHistory.length && isDrawerOpen()) {
-          renderHistory(latestHistory, dateInput.value || getTodayInShanghai());
-        }
-      });
-      historyAllTab.addEventListener('click', () => {
-        historyView = 'all';
-        updateHistoryTabs();
-        if (latestHistory.length && isDrawerOpen()) {
-          renderHistory(latestHistory, dateInput.value || getTodayInShanghai());
-        }
-      });
       allDayClose.addEventListener('click', closeAllDay);
       allDayOverlay.addEventListener('click', event => {
         if (event.target === allDayOverlay) closeAllDay();
