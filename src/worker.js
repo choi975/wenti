@@ -13,8 +13,9 @@ const EXPECTED_COURTS = [
   'VIP1', 'VIP2', 'VIP3', 'VIP4', 'VIP5',
   'A6', 'A7', 'A8', 'A9', 'A10', 'A11', 'A12', 'A13', 'A14', 'A15'
 ];
-const PRIMARY_CRON = '25 * * * *';
-const BACKUP_CRON = '27 * * * *';
+const CRON = '* * * * *';
+// 每个时段最多重试 8 次：:25-:29 密集重试，之后 :35/:45/:55 再补几次。
+const RETRY_MINUTES = [25, 26, 27, 28, 29, 35, 45, 55];
 
 class UpstreamError extends Error {
   constructor(message, status = 502) {
@@ -42,6 +43,7 @@ function getShanghaiParts(now = new Date()) {
     month: '2-digit',
     day: '2-digit',
     hour: '2-digit',
+    minute: '2-digit',
     hourCycle: 'h23'
   }).formatToParts(now);
   return Object.fromEntries(parts.map(part => [part.type, part.value]));
@@ -50,10 +52,6 @@ function getShanghaiParts(now = new Date()) {
 function getTodayInShanghai() {
   const values = getShanghaiParts();
   return `${values.year}-${values.month}-${values.day}`;
-}
-
-function getHourInShanghai() {
-  return Number(getShanghaiParts().hour);
 }
 
 function pad2(value) {
@@ -195,7 +193,8 @@ async function fetchVenuePayload(date) {
   try {
     response = await fetch(url, {
       headers: { Accept: 'application/json', 'Cache-Control': 'no-cache' },
-      cache: 'no-store'
+      cache: 'no-store',
+      signal: AbortSignal.timeout(10000)
     });
   } catch (error) {
     throw new UpstreamError('Unable to reach the venue service.');
@@ -395,14 +394,12 @@ async function writeSnapshot(env, snapshot) {
   ).run();
 }
 
-async function captureSnapshot(env, window, isBackup) {
+async function captureSnapshot(env, window) {
   const date = getTodayInShanghai();
-  if (isBackup) {
-    const existing = await env.DB.prepare(
-      'SELECT status FROM venue_snapshots WHERE snapshot_date = ? AND window_begin = ?'
-    ).bind(date, window.beginTime).first();
-    if (existing?.status === 'success') return;
-  }
+  const existing = await env.DB.prepare(
+    'SELECT status FROM venue_snapshots WHERE snapshot_date = ? AND window_begin = ?'
+  ).bind(date, window.beginTime).first();
+  if (existing?.status === 'success') return;
 
   const capturedAt = new Date().toISOString();
   try {
@@ -459,13 +456,15 @@ export default {
   },
 
   async scheduled(controller, env, ctx) {
-    const isPrimary = controller.cron === PRIMARY_CRON;
-    const isBackup = controller.cron === BACKUP_CRON;
-    if (!isPrimary && !isBackup) return;
+    if (controller.cron !== CRON) return;
 
-    const window = getWindowForHour(getHourInShanghai());
+    const parts = getShanghaiParts();
+    const hour = Number(parts.hour);
+    const minute = Number(parts.minute);
+    if (!RETRY_MINUTES.includes(minute)) return;
+    const window = getWindowForHour(hour);
     if (!window) return;
 
-    await captureSnapshot(env, window, isBackup);
+    await captureSnapshot(env, window);
   }
 };
