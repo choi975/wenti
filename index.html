@@ -886,9 +886,10 @@
       function renderHistoryAll(items) {
         allDayDateLabel.textContent = `最近 ${items.length} 天 · 全部整点`;
         allDaySummary.textContent = '每列一天，每行一个整点时段，数字为该时段可订场地数';
+        const days = [...items].reverse();
 
         let html = '<div class="hm-cell hm-header hm-time hm-corner">时段</div>';
-        html += items
+        html += days
           .map(item => `<div class="hm-cell hm-header">${escapeHtml(item.date)}</div>`)
           .join('');
 
@@ -900,7 +901,7 @@
               <span>${escapeHtml(row.endTime)}</span>
             </div>`;
 
-          items.forEach(item => {
+          days.forEach(item => {
             const snap = item.windows.find(
               window => window.beginTime === row.beginTime && window.endTime === row.endTime
             );
