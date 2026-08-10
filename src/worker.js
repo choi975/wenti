@@ -16,7 +16,7 @@ const EXPECTED_COURTS = [
 const CRON = '25-29 * * * *';
 // 每个时段最多重试 5 次：:25-:29，全部在 :30 锁场之前。
 const RETRY_MINUTES = [25, 26, 27, 28, 29];
-const ALERT_CRON = '0,30 * * * *';
+const ALERT_CRON = '*/10 * * * *';
 const ALERT_START_MINUTE = 8 * 60 + 30; // 08:30
 const ALERT_END_MINUTE = 18 * 60; // 18:00
 const BARK_PUSH_URL = 'https://api.day.app/Q9oUhYzRZXCCrtpC87i2b3/';
@@ -439,8 +439,8 @@ async function checkAlert(env) {
 
   if (Number(config.enabled) !== 1) return;
 
-  // 只处理 8:30-18:00 的整半点（cron 每半小时触发，这里是双重保险）。
-  if (minuteOfDay < ALERT_START_MINUTE || minuteOfDay % 30 !== 0) return;
+  // 只处理 8:30-18:00 的每 10 分钟检查点（cron 每 10 分钟触发，这里是双重保险）。
+  if (minuteOfDay < ALERT_START_MINUTE || minuteOfDay % 10 !== 0) return;
 
   try {
     const { projects } = await fetchVenuePayload(getTodayInShanghai());

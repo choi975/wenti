@@ -854,7 +854,7 @@
         if (alertEnabled) {
           alertToggleButton.textContent = '停止提醒';
           alertThreshold.disabled = true;
-          alertStatus.textContent = `监控中：少于 ${alertThresholdValue} 个场时通知，8:30–18:00 每半小时检查`;
+          alertStatus.textContent = `监控中：少于 ${alertThresholdValue} 个场时通知，8:30–18:00 每 10 分钟检查`;
         } else {
           alertToggleButton.textContent = '开始提醒';
           alertThreshold.disabled = false;
