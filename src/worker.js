@@ -33,6 +33,8 @@ function json(body, init = {}) {
   headers.set('content-type', 'application/json; charset=UTF-8');
   headers.set('cache-control', 'no-store, max-age=0');
   headers.set('access-control-allow-origin', '*');
+  headers.set('access-control-allow-methods', 'GET, POST, OPTIONS');
+  headers.set('access-control-allow-headers', 'Content-Type, Accept, Cache-Control');
   return new Response(JSON.stringify(body), { ...init, headers });
 }
 
@@ -545,6 +547,18 @@ async function captureSnapshot(env, window) {
 export default {
   async fetch(request, env) {
     const url = new URL(request.url);
+    if (url.pathname.startsWith('/api/') && request.method === 'OPTIONS') {
+      return new Response(null, {
+        status: 204,
+        headers: {
+          'access-control-allow-origin': '*',
+          'access-control-allow-methods': 'GET, POST, OPTIONS',
+          'access-control-allow-headers': 'Content-Type, Accept, Cache-Control',
+          'access-control-max-age': '86400',
+          'cache-control': 'no-store'
+        }
+      });
+    }
     if (url.pathname === '/api/availability') {
       if (request.method !== 'GET') return errorResponse('Method not allowed.', 405);
       return handleAvailability(url);
