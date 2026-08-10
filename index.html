@@ -238,6 +238,58 @@
 
     .meta-row span { display: inline-flex; align-items: center; gap: 7px; }
 
+    .alert-bar {
+      z-index: 1;
+      grid-column: 1 / -1;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      flex-wrap: wrap;
+      padding: 13px 16px;
+      border: 1px solid rgba(255,255,255,.22);
+      border-radius: 15px;
+      background: rgba(255,255,255,.12);
+      backdrop-filter: blur(8px);
+    }
+
+    .alert-bar label {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      color: rgba(255,255,255,.92);
+      font-weight: 700;
+      white-space: nowrap;
+    }
+
+    .alert-bar input[type="number"] {
+      width: 66px;
+      min-height: 38px;
+      padding: 0 8px;
+      border: 1px solid rgba(255,255,255,.38);
+      border-radius: 10px;
+      outline: 0;
+      color: white;
+      background: rgba(255,255,255,.15);
+      font-weight: 900;
+      text-align: center;
+    }
+
+    .alert-bar input[type="number"]:focus-visible {
+      border-color: white;
+      box-shadow: 0 0 0 3px rgba(255,255,255,.25);
+    }
+
+    .alert-bar input[type="number"]:disabled { opacity: .55; }
+
+    .alert-bar .button { min-height: 38px; padding: 0 16px; }
+    .alert-bar .button.secondary { background: rgba(255,255,255,.92); }
+
+    .alert-status {
+      color: rgba(255,255,255,.82);
+      font-size: 13px;
+      font-weight: 700;
+    }
+
     .section-head {
       display: flex;
       justify-content: space-between;
@@ -603,6 +655,14 @@
           <span id="countdownText">每 60 秒自动刷新</span>
         </div>
       </div>
+      <div class="alert-bar" aria-label="空场提醒设置">
+        <label for="alertThreshold">少于
+          <input id="alertThreshold" type="number" min="1" max="15" step="1" value="3" aria-label="提醒阈值">
+          个场时，提醒我
+        </label>
+        <button class="button secondary" id="alertToggleButton" type="button">开始提醒</button>
+        <span class="alert-status" id="alertStatus" role="status">正在读取提醒状态…</span>
+      </div>
     </section>
 
     <div class="notice" id="notice" role="alert"></div>
@@ -677,6 +737,9 @@
       const allDayButton = document.getElementById('allDayButton');
       const historyButton = document.getElementById('historyButton');
       const refreshButton = document.getElementById('refreshButton');
+      const alertThreshold = document.getElementById('alertThreshold');
+      const alertToggleButton = document.getElementById('alertToggleButton');
+      const alertStatus = document.getElementById('alertStatus');
       const availableCount = document.getElementById('availableCount');
       const availableCourts = document.getElementById('availableCourts');
       const courtGrid = document.getElementById('courtGrid');
@@ -708,6 +771,8 @@
       let drawerMode = 'all-day';
       let availabilityRequestId = 0;
       let historyRequestId = 0;
+      let alertEnabled = false;
+      let alertThresholdValue = 3;
 
       function getTodayInShanghai() {
         const parts = new Intl.DateTimeFormat('en-CA', {
@@ -768,6 +833,105 @@
       function buildHistoryUrl() {
         const base = usesWorkerApi() ? '' : WORKER_ORIGIN;
         return `${base}/api/history?days=30`;
+      }
+
+      function getShanghaiMinuteOfDay() {
+        const parts = new Intl.DateTimeFormat('en-CA', {
+          timeZone: 'Asia/Shanghai',
+          year: 'numeric', month: '2-digit', day: '2-digit',
+          hour: '2-digit', minute: '2-digit', hourCycle: 'h23'
+        }).formatToParts(new Date());
+        const values = Object.fromEntries(parts.map(part => [part.type, part.value]));
+        return Number(values.hour) * 60 + Number(values.minute);
+      }
+
+      function buildAlertUrl() {
+        const base = usesWorkerApi() ? '' : WORKER_ORIGIN;
+        return `${base}/api/alert`;
+      }
+
+      function renderAlertState() {
+        if (alertEnabled) {
+          alertToggleButton.textContent = '停止提醒';
+          alertThreshold.disabled = true;
+          alertStatus.textContent = `监控中：少于 ${alertThresholdValue} 个场时通知，8:30–18:00 每半小时检查`;
+        } else {
+          alertToggleButton.textContent = '开始提醒';
+          alertThreshold.disabled = false;
+          alertStatus.textContent = getShanghaiMinuteOfDay() > 18 * 60
+            ? '今天的监控时段已结束（8:30–18:00），明天 8:30 再开始'
+            : '未开启提醒';
+        }
+      }
+
+      async function loadAlertState() {
+        try {
+          const response = await fetch(buildAlertUrl(), {
+            cache: 'no-store',
+            headers: { Accept: 'application/json' }
+          });
+          if (!response.ok) throw new Error(`HTTP ${response.status}`);
+          const payload = await response.json();
+          if (typeof payload?.enabled !== 'boolean') throw new Error('格式异常');
+          alertEnabled = payload.enabled;
+          if (Number.isInteger(payload.threshold) && payload.threshold >= 1 && payload.threshold <= 15) {
+            alertThresholdValue = payload.threshold;
+            alertThreshold.value = String(payload.threshold);
+          }
+          renderAlertState();
+        } catch (error) {
+          alertStatus.textContent = '提醒服务暂时不可用';
+        }
+      }
+
+      async function startAlert() {
+        const threshold = Number(alertThreshold.value);
+        if (!Number.isInteger(threshold) || threshold < 1 || threshold > 15) {
+          alertStatus.textContent = '请输入 1-15 之间的整数';
+          return;
+        }
+        alertToggleButton.disabled = true;
+        alertStatus.textContent = '正在开启…';
+        try {
+          const response = await fetch(buildAlertUrl(), {
+            method: 'POST',
+            cache: 'no-store',
+            headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+            body: JSON.stringify({ threshold })
+          });
+          const payload = await response.json().catch(() => ({}));
+          if (!response.ok) {
+            alertStatus.textContent = payload.message || `开启失败：HTTP ${response.status}`;
+            return;
+          }
+          alertEnabled = true;
+          alertThresholdValue = Number.isInteger(payload.threshold) ? payload.threshold : threshold;
+          alertThreshold.value = String(alertThresholdValue);
+          renderAlertState();
+        } catch (error) {
+          alertStatus.textContent = '开启失败，请稍后重试';
+        } finally {
+          alertToggleButton.disabled = false;
+        }
+      }
+
+      async function stopAlert() {
+        alertToggleButton.disabled = true;
+        alertStatus.textContent = '正在停止…';
+        try {
+          const response = await fetch(`${buildAlertUrl()}/stop`, {
+            method: 'POST',
+            cache: 'no-store',
+            headers: { Accept: 'application/json' }
+          });
+          if (!response.ok) throw new Error(`HTTP ${response.status}`);
+          alertEnabled = false;
+          renderAlertState();
+        } catch (error) {
+          alertStatus.textContent = '停止失败，请稍后重试';
+        } finally {
+          alertToggleButton.disabled = false;
+        }
       }
 
       function findSlot(project, beginTime, endTime) {
@@ -1178,6 +1342,10 @@
       refreshButton.addEventListener('click', () => loadAvailability(true));
       allDayButton.addEventListener('click', openAllDay);
       historyButton.addEventListener('click', openHistory);
+      alertToggleButton.addEventListener('click', () => {
+        if (alertEnabled) stopAlert();
+        else startAlert();
+      });
       allDayClose.addEventListener('click', closeAllDay);
       allDayOverlay.addEventListener('click', event => {
         if (event.target === allDayOverlay) closeAllDay();
@@ -1188,7 +1356,10 @@
       });
 
       document.addEventListener('visibilitychange', () => {
-        if (!document.hidden && Date.now() >= nextRefreshAt) loadAvailability(false);
+        if (!document.hidden) {
+          if (Date.now() >= nextRefreshAt) loadAvailability(false);
+          loadAlertState();
+        }
       });
 
       document.addEventListener('keydown', event => {
@@ -1196,6 +1367,7 @@
       });
 
       loadAvailability(true);
+      loadAlertState();
     })();
   </script>
 </body>

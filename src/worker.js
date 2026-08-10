@@ -16,6 +16,10 @@ const EXPECTED_COURTS = [
 const CRON = '25-29 * * * *';
 // 每个时段最多重试 5 次：:25-:29，全部在 :30 锁场之前。
 const RETRY_MINUTES = [25, 26, 27, 28, 29];
+const ALERT_CRON = '0,30 * * * *';
+const ALERT_START_MINUTE = 8 * 60 + 30; // 08:30
+const ALERT_END_MINUTE = 18 * 60; // 18:00
+const BARK_PUSH_URL = 'https://api.day.app/Q9oUhYzRZXCCrtpC87i2b3/';
 
 class UpstreamError extends Error {
   constructor(message, status = 502) {
@@ -351,6 +355,104 @@ async function handleHistory(env, url) {
   }
 }
 
+function getMinuteOfDay(parts) {
+  return Number(parts.hour) * 60 + Number(parts.minute);
+}
+
+async function loadAlertConfig(env) {
+  return env.DB.prepare(
+    'SELECT threshold, enabled, updated_at FROM alert_config WHERE id = 1'
+  ).bind().first();
+}
+
+async function saveAlertConfig(env, { threshold, enabled }) {
+  const updatedAt = new Date().toISOString();
+  await env.DB.prepare(`
+    INSERT INTO alert_config (id, threshold, enabled, updated_at)
+    VALUES (1, ?, ?, ?)
+    ON CONFLICT(id) DO UPDATE SET
+      threshold = excluded.threshold,
+      enabled = excluded.enabled,
+      updated_at = excluded.updated_at
+  `).bind(threshold, enabled ? 1 : 0, updatedAt).run();
+  return updatedAt;
+}
+
+async function handleAlertGet(env) {
+  const config = await loadAlertConfig(env);
+  return json({
+    enabled: Boolean(config?.enabled),
+    threshold: config?.threshold ?? null,
+    updatedAt: config?.updated_at ?? null
+  });
+}
+
+async function handleAlertStart(env, request) {
+  let body;
+  try {
+    body = await request.json();
+  } catch (error) {
+    return errorResponse('请求格式错误。', 400);
+  }
+
+  const threshold = Number(body?.threshold);
+  if (!Number.isInteger(threshold) || threshold < 1 || threshold > 15) {
+    return errorResponse('阈值必须是 1-15 的整数。', 400);
+  }
+
+  if (getMinuteOfDay(getShanghaiParts()) > ALERT_END_MINUTE) {
+    return errorResponse('今天的监控时段已结束（8:30–18:00），明天 8:30 再开始。', 400);
+  }
+
+  const updatedAt = await saveAlertConfig(env, { threshold, enabled: true });
+  return json({ enabled: true, threshold, updatedAt });
+}
+
+async function handleAlertStop(env) {
+  const config = await loadAlertConfig(env);
+  const updatedAt = await saveAlertConfig(env, {
+    threshold: config?.threshold ?? null,
+    enabled: false
+  });
+  return json({
+    enabled: false,
+    threshold: config?.threshold ?? null,
+    updatedAt
+  });
+}
+
+async function checkAlert(env) {
+  const config = await loadAlertConfig(env);
+  if (!config) return;
+
+  const minuteOfDay = getMinuteOfDay(getShanghaiParts());
+
+  // 过了 18:00 自动关闭当天的提醒，第二天需要重新点“开始”。
+  if (minuteOfDay > ALERT_END_MINUTE) {
+    if (Number(config.enabled) === 1) {
+      await saveAlertConfig(env, { threshold: config.threshold, enabled: false });
+    }
+    return;
+  }
+
+  if (Number(config.enabled) !== 1) return;
+
+  // 只处理 8:30-18:00 的整半点（cron 每半小时触发，这里是双重保险）。
+  if (minuteOfDay < ALERT_START_MINUTE || minuteOfDay % 30 !== 0) return;
+
+  try {
+    const { projects } = await fetchVenuePayload(getTodayInShanghai());
+    const dashboard = analyzeProjects(projects);
+    if (dashboard.continuousCount < Number(config.threshold)) {
+      const message = `剩 ${dashboard.continuousCount} 个空场：${dashboard.continuousCourts.join('、')}`;
+      await fetch(BARK_PUSH_URL + encodeURIComponent(message), { method: 'GET' });
+      console.log(`Alert pushed: ${message}`);
+    }
+  } catch (error) {
+    console.error('Unable to run alert check', error);
+  }
+}
+
 async function writeSnapshot(env, snapshot) {
   await env.DB.prepare(`
     INSERT INTO venue_snapshots (
@@ -451,20 +553,35 @@ export default {
       if (request.method !== 'GET') return errorResponse('Method not allowed.', 405);
       return handleHistory(env, url);
     }
+    if (url.pathname === '/api/alert') {
+      if (request.method === 'GET') return handleAlertGet(env);
+      if (request.method === 'POST') return handleAlertStart(env, request);
+      return errorResponse('Method not allowed.', 405);
+    }
+    if (url.pathname === '/api/alert/stop') {
+      if (request.method !== 'POST') return errorResponse('Method not allowed.', 405);
+      return handleAlertStop(env);
+    }
     if (url.pathname.startsWith('/api/')) return errorResponse('Not found.', 404);
     return env.ASSETS.fetch(request);
   },
 
   async scheduled(controller, env, ctx) {
-    if (controller.cron !== CRON) return;
+    if (controller.cron === CRON) {
+      const parts = getShanghaiParts();
+      const hour = Number(parts.hour);
+      const minute = Number(parts.minute);
+      if (!RETRY_MINUTES.includes(minute)) return;
+      const window = getWindowForHour(hour);
+      if (!window) return;
 
-    const parts = getShanghaiParts();
-    const hour = Number(parts.hour);
-    const minute = Number(parts.minute);
-    if (!RETRY_MINUTES.includes(minute)) return;
-    const window = getWindowForHour(hour);
-    if (!window) return;
+      await captureSnapshot(env, window);
+      return;
+    }
 
-    await captureSnapshot(env, window);
+    if (controller.cron === ALERT_CRON) {
+      await checkAlert(env);
+      return;
+    }
   }
 };
