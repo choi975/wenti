@@ -661,6 +661,7 @@
           个场时，提醒我
         </label>
         <button class="button secondary" id="alertToggleButton" type="button">开始提醒</button>
+        <button class="button secondary" id="alertTestButton" type="button" title="按当前空场数立即发送一条测试通知">立即发送</button>
         <span class="alert-status" id="alertStatus" role="status">正在读取提醒状态…</span>
       </div>
     </section>
@@ -739,6 +740,7 @@
       const refreshButton = document.getElementById('refreshButton');
       const alertThreshold = document.getElementById('alertThreshold');
       const alertToggleButton = document.getElementById('alertToggleButton');
+      const alertTestButton = document.getElementById('alertTestButton');
       const alertStatus = document.getElementById('alertStatus');
       const availableCount = document.getElementById('availableCount');
       const availableCourts = document.getElementById('availableCourts');
@@ -931,6 +933,28 @@
           alertStatus.textContent = '停止失败，请稍后重试';
         } finally {
           alertToggleButton.disabled = false;
+        }
+      }
+
+      async function sendTestAlert() {
+        alertTestButton.disabled = true;
+        alertStatus.textContent = '正在发送测试通知…';
+        try {
+          const response = await fetch(`${buildAlertUrl()}/test`, {
+            method: 'POST',
+            cache: 'no-store',
+            headers: { Accept: 'application/json' }
+          });
+          const payload = await response.json().catch(() => ({}));
+          if (!response.ok) {
+            alertStatus.textContent = payload.message || `发送失败：HTTP ${response.status}`;
+            return;
+          }
+          alertStatus.textContent = `已发送测试通知：${payload.message || ''}`;
+        } catch (error) {
+          alertStatus.textContent = '发送失败，请稍后重试';
+        } finally {
+          alertTestButton.disabled = false;
         }
       }
 
@@ -1346,6 +1370,7 @@
         if (alertEnabled) stopAlert();
         else startAlert();
       });
+      alertTestButton.addEventListener('click', sendTestAlert);
       allDayClose.addEventListener('click', closeAllDay);
       allDayOverlay.addEventListener('click', event => {
         if (event.target === allDayOverlay) closeAllDay();

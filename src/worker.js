@@ -423,6 +423,19 @@ async function handleAlertStop(env) {
   });
 }
 
+async function handleAlertTest(env) {
+  try {
+    const { projects } = await fetchVenuePayload(getTodayInShanghai());
+    const dashboard = analyzeProjects(projects);
+    const message = `剩 ${dashboard.continuousCount} 个空场：${dashboard.continuousCourts.join('、')}`;
+    await fetch(BARK_PUSH_URL + encodeURIComponent(message), { method: 'GET' });
+    return json({ ok: true, message, pushedAt: new Date().toISOString() });
+  } catch (error) {
+    console.error('Unable to send test alert', error);
+    return errorResponse('发送失败，球馆接口暂时不可用。', 502);
+  }
+}
+
 async function checkAlert(env) {
   const config = await loadAlertConfig(env);
   if (!config) return;
@@ -566,6 +579,10 @@ export default {
     if (url.pathname === '/api/history') {
       if (request.method !== 'GET') return errorResponse('Method not allowed.', 405);
       return handleHistory(env, url);
+    }
+    if (url.pathname === '/api/alert/test') {
+      if (request.method !== 'POST') return errorResponse('Method not allowed.', 405);
+      return handleAlertTest(env);
     }
     if (url.pathname === '/api/alert') {
       if (request.method === 'GET') return handleAlertGet(env);

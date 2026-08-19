@@ -16,7 +16,9 @@ Cloudflare Worker deployment for the venue availability board in `index.html`.
   user-set threshold (1-15) courts are continuously bookable for 19:30-21:30. The user
   starts it manually each day; the worker checks every 10 minutes from 08:30 to 18:00
   (Asia/Shanghai) and auto-disables after 18:00. Configuration is stored in D1 and
-  exposed through `/api/alert` (GET/POST) and `/api/alert/stop` (POST).
+  exposed through `/api/alert` (GET/POST) and `/api/alert/stop` (POST). A manual test
+  push is available at `/api/alert/test` (POST), used by the "立即发送" button on the
+  dashboard.
 
 The schedule uses two UTC cron triggers (Cloudflare Cron Triggers use UTC):
 
