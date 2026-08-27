@@ -729,6 +729,13 @@
       const EXPECTED_COURTS = ['VIP1', 'VIP2', 'VIP3', 'VIP4', 'VIP5', 'A6', 'A7', 'A8', 'A9', 'A10', 'A11', 'A12', 'A13', 'A14', 'A15'];
       const AUTO_REFRESH_SECONDS = 60;
       const WORKER_ORIGIN = 'https://wenti.choi975.workers.dev';
+      const NAVIGATION_SHORTCUTS = {
+        '1': 'https://todo.choi975.workers.dev/',
+        '2': 'https://badminton.choi975.workers.dev/',
+        '3': 'https://wenti.choi975.workers.dev/',
+        '4': 'https://sien-day.choi975.workers.dev/',
+        '5': 'https://choi975.github.io/xizang/'
+      };
 
       const app = document.getElementById('app');
       const dateInput = document.getElementById('dateInput');
@@ -1389,6 +1396,10 @@
 
       document.addEventListener('keydown', event => {
         if (event.key === 'Escape' && isDrawerOpen()) closeAllDay();
+        if (event.altKey && NAVIGATION_SHORTCUTS[event.key]) {
+          event.preventDefault();
+          window.location.assign(NAVIGATION_SHORTCUTS[event.key]);
+        }
       });
 
       loadAvailability(true);
