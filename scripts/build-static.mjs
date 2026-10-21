@@ -12,4 +12,5 @@ await copyFile(
   resolve(outputDirectory, 'index.html')
 );
 
-console.log('Built public/index.html');
+await copyFile(resolve(projectDirectory, 'project-shortcuts.js'), resolve(outputDirectory, 'project-shortcuts.js'));
+console.log('Built public/index.html and project-shortcuts.js');
